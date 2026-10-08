@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"
+     role="img" aria-labelledby="title description">
+  <title id="title">iman</title>
+  <desc id="description">Session manager. Pixel logo in graphite and muted plum on a transparent background.</desc>
+  <defs>
+    <path id="glyph-i" d="M2-2h1v1H2z M1 0h2v4h1v1H1V4h1V1H1z"/>
+    <path id="glyph-m" d="M0 0h4l1 1v4H4V1H3v4H2V1H1v4H0z"/>
+    <path id="glyph-a" d="M1 0h3l1 1v4H1L0 4V3l1-1h3V1H1z M1 3v1h3V3z"/>
+    <path id="glyph-n" d="M0 0h4l1 1v4H4V1H1v4H0z"/>
+  </defs>
+  <g id="symbol" transform="translate(100 64) scale(24)" fill-rule="evenodd">
+    <path fill="#444749" d="M5 4h1v2H5V7H4v1H3v1H2V8h1V7h1V6h1z M7 4h1v2h1v1h1v1h1v1h-1V8H9V7H8V6H7z"/>
+    <g fill="#9a8994">
+      <rect x="5.5" y="1.5" width="2" height="2"/>
+    </g>
+  </g>
+  <g id="wordmark" transform="translate(164 392) scale(8)" fill="#444749" fill-rule="evenodd">
+    <use href="#glyph-i" x="0"/>
+    <use href="#glyph-m" x="6"/>
+    <use href="#glyph-a" x="12"/>
+    <use href="#glyph-n" x="18"/>
+  </g>
+</svg>

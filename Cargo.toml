@@ -1,0 +1,44 @@
+[package]
+name = "iman"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "BSD-3-Clause"
+description = "Idle session manager: IGUI and RetroArch lifecycle"
+
+[features]
+default = ["rgb565"]
+rgb565 = ["imanlib/rgb565"]
+# Shared lifecycle/export code; each passive collector pulls it in automatically.
+diag-cycle = []
+diagnostics = ["io-monitor", "diag-perf", "diag-klog", "diag-memory", "diag-display", "diag-input", "diag-uart"]
+io-monitor = ["diag-cycle"]
+diag-perf = ["diag-cycle"]
+diag-klog = ["diag-cycle"]
+diag-memory = ["diag-cycle"]
+diag-uart = ["diag-cycle"]
+diag-display = ["diag-cycle"]
+diag-input = ["diag-cycle", "imanlib/input", "dep:embedded-graphics"]
+drm = ["imanlib/drm", "dep:drm", "dep:embedded-graphics"]
+pc = ["imanlib/graphics", "dep:embedded-graphics", "dep:minifb"]
+
+[[example]]
+name = "splash_preview"
+path = "tools/splash_preview.rs"
+required-features = ["drm"]
+
+[dependencies]
+imanlib = { git = "https://github.com/idleboxed/imanlib.git", rev = "044a989218813a1636847289d3530e1b264513eb" }
+minifb = { version = "=0.28.0", default-features = false, features = ["x11"], optional = true }
+drm = { version = "=0.14.1", optional = true }
+embedded-graphics = { version = "=0.8.2", optional = true }
+libc = "=0.2.189"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.148"
+sha2 = "=0.10.9"
+tempfile = "=3.24.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
