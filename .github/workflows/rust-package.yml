@@ -22,7 +22,7 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: "0"
       # IPC fixtures select tmpfs explicitly; executable fixtures need an exec-capable filesystem.
-      TMPDIR: ${{ runner.temp }}
+      TMPDIR: /tmp
 
     steps:
       - uses: actions/checkout@v6
