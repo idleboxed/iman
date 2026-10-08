@@ -92,6 +92,37 @@ fn trace(root: &Path) -> Vec<Value> {
         .collect()
 }
 
+fn assert_runtime_cleaned(parent: &Path) {
+    let remaining: Vec<_> = fs::read_dir(parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    // A disk-backed bundle can start the I/O monitor; its finalized RAM report
+    // is retained deliberately, unlike the IPC, child runtime and launch log.
+    assert!(
+        remaining.len() <= usize::from(cfg!(feature = "io-monitor")),
+        "unexpected runtime entries: {remaining:?}"
+    );
+    for path in remaining {
+        let name = path.file_name().unwrap().to_str().unwrap();
+        assert!(
+            name.starts_with("iman-io-") && name.ends_with(".json"),
+            "unexpected runtime entry: {}", path.display()
+        );
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        assert!(metadata.is_file(), "retained report must be a regular file");
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        #[cfg(feature = "io-monitor")]
+        assert!(metadata.len() <= iman::diagnostics::io::REPORT_LIMIT as u64);
+        let report: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(report["version"], 2);
+        assert!(
+            report["finished"] == true || report["error"].is_string(),
+            "retained report must be finalized: {}", path.display()
+        );
+    }
+}
+
 #[test]
 fn gui_exits_before_game_and_returns_with_state() {
     let root = fixture("success");
@@ -399,7 +430,7 @@ fn unknown_profile_keys_do_not_override_emulation_settings() {
     assert!(config.contains("config_save_on_exit = \"false\""));
     assert!(config.contains("video_context_driver"));
     assert_eq!(events[2]["bootstrap"]["state"]["platform"], "NES");
-    assert_eq!(fs::read_dir(runtime.path()).unwrap().count(), 0);
+    assert_runtime_cleaned(runtime.path());
 }
 
 struct LeaseTrace {
@@ -979,7 +1010,7 @@ fn installed_cli_infers_root_loads_profile_and_ignores_former_board_flag() {
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert_eq!(trace(root.path()).len(), 3);
     assert!(String::from_utf8_lossy(&output.stderr).contains("ignoring unrecognized"));
-    assert_eq!(fs::read_dir(&runtime).unwrap().count(), 0);
+    assert_runtime_cleaned(&runtime);
     assert!(trace(root.path())[0]["args"].as_array().unwrap().contains(&json!("--headless")));
 }
 
