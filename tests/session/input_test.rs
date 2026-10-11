@@ -8,7 +8,7 @@ use serde_json::json;
 use std::{fs, io, os::unix::process::ExitStatusExt, path::Path,
     sync::{Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 
-#[path = "common/timing.rs"]
+#[path = "../common/timing.rs"]
 mod test_timing;
 use test_timing::ManualTiming;
 

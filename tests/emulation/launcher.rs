@@ -9,9 +9,9 @@ use imanlib::igui::LaunchRequest;
 use serde_json::json;
 use tempfile::TempDir;
 
-#[path = "common/bundle.rs"]
+#[path = "../common/bundle.rs"]
 mod bundle_fixture;
-#[path = "common/settings.rs"]
+#[path = "../common/settings.rs"]
 mod settings_fixture;
 
 fn fixture() -> (TempDir, LaunchRequest) {

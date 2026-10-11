@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //! Synthetic evdev sources only; no hardware or persistent mappings.
 #![cfg(feature = "diag-input")]
+mod guide;
+mod inventory;
+mod journal;
+mod proposal;
+mod render;
+
 use {
     imanlib::input_probe::linux::Pad,
     imanlib::input_probe::linux::Source,

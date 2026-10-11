@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //! Synthetic settings only; no shipped profiles, RetroArch or hardware.
+mod bios;
+mod core_options;
+mod launcher;
+mod remap;
+
 use iman::emulation::Settings;
 use serde_json::json;
 
-#[path = "common/settings.rs"]
+#[path = "../common/settings.rs"]
 mod settings_fixture;
 
 #[test]

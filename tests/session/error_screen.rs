@@ -12,7 +12,7 @@ use std::{io, path::{Path, PathBuf}, time::Duration};
 #[cfg(feature = "diag-input")]
 use std::time::Instant;
 
-#[path = "common/timing.rs"]
+#[path = "../common/timing.rs"]
 mod test_timing;
 use test_timing::ManualTiming;
 
@@ -169,7 +169,7 @@ fn signal_cancels_countdown_and_restores_display_without_waiting_ten_seconds() {
     const WORKER: &str = "IMAN_SPLASH_SIGNAL_FIXTURE";
     if std::env::var_os(WORKER).is_none() {
         let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "signal_cancels_countdown_and_restores_display_without_waiting_ten_seconds"])
+            .args(["--exact", "error_screen::signal_cancels_countdown_and_restores_display_without_waiting_ten_seconds"])
             .env(WORKER, "1").status().unwrap();
         assert!(status.success());
         return;
@@ -289,7 +289,7 @@ fn signal_cancels_diagnostics_before_countdown() {
     const WORKER: &str = "IMAN_DIAGNOSTICS_SIGNAL_FIXTURE";
     if std::env::var_os(WORKER).is_none() {
         let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "signal_cancels_diagnostics_before_countdown"])
+            .args(["--exact", "error_screen::signal_cancels_diagnostics_before_countdown"])
             .env(WORKER, "1").status().unwrap();
         assert!(status.success());
         return;

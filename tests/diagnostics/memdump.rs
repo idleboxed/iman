@@ -12,7 +12,7 @@ use iman::{
 };
 use serde_json::{json, Value};
 
-#[path = "common/timing.rs"]
+#[path = "../common/timing.rs"]
 mod timing;
 
 fn identity() -> Identity {
@@ -72,7 +72,7 @@ impl Reader for SyntheticReader {
 
 #[test]
 fn candidate_profile_is_external_disabled_and_limited_to_first_word() {
-    let profile = Profile::parse(include_bytes!("../memory-profiles/rk3032-dongle.json")).unwrap();
+    let profile = Profile::parse(include_bytes!("../../memory-profiles/rk3032-dongle.json")).unwrap();
 
     assert!(!profile.read.enabled);
     assert_eq!(profile.plan().unwrap(), ReadPlan { address: 0x10100000, length: 4, unit: 4 });

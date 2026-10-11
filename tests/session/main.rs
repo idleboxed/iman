@@ -1,4 +1,8 @@
 //! Synthetic executables, not RetroArch, real ROMs, or hardware tests.
+mod control;
+mod error_screen;
+mod input_test;
+
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -11,11 +15,11 @@ use std::{
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
-#[path = "common/bundle.rs"]
+#[path = "../common/bundle.rs"]
 mod bundle_fixture;
-#[path = "common/settings.rs"]
+#[path = "../common/settings.rs"]
 mod settings_fixture;
-#[path = "common/python.rs"]
+#[path = "../common/python.rs"]
 mod python_fixture;
 
 fn write_executable(path: &Path, source: &str) {
@@ -36,11 +40,11 @@ fn fixture(mode: &str) -> TempDir {
     fs::write(root.join("mode"), mode).unwrap();
     write_executable(
         &root.join("system/igui/igui"),
-        &format!("{}\n{}", include_str!("common/ipc.py"), include_str!("common/lifecycle_gui.py")),
+        &format!("{}\n{}", include_str!("../common/ipc.py"), include_str!("../common/lifecycle_gui.py")),
     );
     write_executable(
         &root.join("system/retroarch/retroarch"),
-        include_str!("common/lifecycle_game.py"),
+        include_str!("../common/lifecycle_game.py"),
     );
     let component = |path: &str| json!({"path": path});
     fs::write(
@@ -690,7 +694,7 @@ fn diagnostic_log_limit_does_not_cap_game_files_or_expand_parent_logs() {
     let runtime = tempfile::tempdir_in("/dev/shm").unwrap();
     write_executable(
         &root.path().join("system/retroarch/retroarch"),
-        include_str!("common/large_game.py"),
+        include_str!("../common/large_game.py"),
     );
     // Simulate iman startup's soft limit while retaining an inherited larger hard limit.
     let mut limit = libc::rlimit {
@@ -1055,7 +1059,7 @@ fn game_receives_selected_remap_before_exec_and_runtime_is_removed_after_exit() 
 #[test]
 fn synthetic_frontend_loads_sram_and_rtc_again_after_a_new_session_separately_from_states() {
     let root = fixture("success");
-    write_executable(&root.path().join("system/retroarch/retroarch"), include_str!("common/sram_game.py"));
+    write_executable(&root.path().join("system/retroarch/retroarch"), include_str!("../common/sram_game.py"));
 
     assert!(wait(&mut spawn(root.path())).success());
     assert!(wait(&mut spawn(root.path())).success());

@@ -113,7 +113,7 @@ fn segment_log_rotation_keeps_shared_stdio_offsets_and_independent_snapshots() {
     }
     let root = tempfile::tempdir_in("/dev/shm").unwrap();
     let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "segment_log_rotation_keeps_shared_stdio_offsets_and_independent_snapshots", "--nocapture"])
+        .args(["--exact", "startup::segment_log_rotation_keeps_shared_stdio_offsets_and_independent_snapshots", "--nocapture"])
         .env(WORKER, root.path()).output().unwrap();
 
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));

@@ -2,7 +2,7 @@
 //! Pinned host ELF and tmpfs fixtures, never SD, vendor ELF or board guards.
 use std::{ffi::CString, fs, path::Path, process::Command};
 
-#[path = "common/python.rs"]
+#[path = "../common/python.rs"]
 mod python_fixture;
 
 #[test]
@@ -13,7 +13,7 @@ fn repeated_pinned_gui_survives_full_logs_disabled_exports_and_writer_failure() 
             if mode != "disabled" && !cfg!(feature = "diag-cycle") { continue; }
             let root = tempfile::tempdir_in("/dev/shm").unwrap();
             let output = Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "repeated_pinned_gui_survives_full_logs_disabled_exports_and_writer_failure", "--nocapture"])
+                .args(["--exact", "child_log::repeated_pinned_gui_survives_full_logs_disabled_exports_and_writer_failure", "--nocapture"])
                 .env(WORKER, root.path()).env("IMAN_GUI_LOG_MODE", mode).output().unwrap();
 
             assert!(output.status.success(), "{mode}: {}: {}\n{}", output.status, String::from_utf8_lossy(&output.stderr),
@@ -72,8 +72,8 @@ fn repeated_pinned_gui_survives_full_logs_disabled_exports_and_writer_failure() 
     }
     let gui = CString::new(format!(
         "{}\n{}",
-        include_str!("common/ipc.py"),
-        include_str!("common/log_gui.py"),
+        include_str!("../common/ipc.py"),
+        include_str!("../common/log_gui.py"),
     )).unwrap();
     for _ in 0..20 {
         let executable = fs::File::open(python_fixture::find_python()).unwrap();
