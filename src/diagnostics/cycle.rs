@@ -25,6 +25,8 @@ pub fn compiled_modules() -> &'static [&'static str] {
         "diag_klog",
         #[cfg(feature = "diag-uart")]
         "diag_uart",
+        #[cfg(feature = "diag-memdump")]
+        "diag_memdump",
         #[cfg(feature = "diag-display")]
         "diag_display",
         #[cfg(feature = "diag-input")]

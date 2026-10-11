@@ -44,6 +44,8 @@ pub struct Control {
     gui_started: Instant,
     operations: BTreeMap<u64, Value>,
     next_operation: u64,
+    #[cfg(feature = "diag-memdump")]
+    memory_dump: crate::diagnostics::memdump::Monitor,
     #[cfg(feature = "diag-input")]
     input_test: crate::input_test::journal::Journal,
     #[cfg(feature = "diag-input")]
@@ -105,6 +107,8 @@ impl Control {
             gui_started: Instant::now(),
             operations: BTreeMap::new(),
             next_operation: 1,
+            #[cfg(feature = "diag-memdump")]
+            memory_dump: crate::diagnostics::memdump::Monitor::default(),
             #[cfg(feature = "diag-input")]
             input_test: crate::input_test::journal::Journal::default(),
             #[cfg(feature = "diag-input")]
@@ -157,12 +161,17 @@ impl Control {
         Ok(root.clone())
     }
 
-    /// Application entry starts exactly the passive collectors selected at build time.
+    /// Start passive collectors and prepare an optional active probe without accessing physical memory.
     pub fn start_diagnostics(&mut self) -> io::Result<()> {
         #[cfg(feature = "diag-cycle")]
         {
             if crate::diagnostics::cycle::compiled_modules().is_empty() { return Ok(()); }
             let root = self.prepare_root()?;
+            #[cfg(feature = "diag-memdump")]
+            {
+                self.memory_dump.prepare(&root);
+                crate::session::diagnostic(format_args!("iman: {}", self.memory_dump.status()));
+            }
             let writer: crate::diagnostics::cycle::Writer = std::sync::Arc::new(move |run, bundle| {
                 crate::diagnostics::export::write_root(&root, run, bundle)
             });
@@ -188,6 +197,46 @@ impl Control {
     }
     pub fn runtime_parent(&self) -> &Path {
         &self.parent
+    }
+    /// Embedders may replace effects before startup, without bypassing profile/root/attempt checks.
+    #[cfg(feature = "diag-memdump")]
+    pub fn set_memory_dump_sources(
+        &mut self,
+        platform: impl crate::diagnostics::memdump::profile::Platform + 'static,
+        reader: impl crate::diagnostics::memdump::reader::Reader + 'static,
+    ) -> io::Result<()> {
+        if self.cycles.is_some() || self.child.is_some()
+            || self.memory_dump.report().state != crate::diagnostics::memdump::State::Unprepared
+        { return Err(io::Error::other("memory dump sources must be configured before startup")); }
+        self.memory_dump = crate::diagnostics::memdump::Monitor::new(platform, reader);
+        Ok(())
+    }
+    #[cfg(feature = "diag-memdump")]
+    pub fn memory_dump_report(&self) -> &crate::diagnostics::memdump::Report { self.memory_dump.report() }
+    #[cfg(feature = "diag-memdump")]
+    pub fn memory_dump_status(&self) -> String { self.memory_dump.status() }
+    #[cfg(feature = "diag-memdump")]
+    pub fn memory_dump_start_status(&self) -> String { self.memory_dump.start_status() }
+    #[cfg(feature = "diag-memdump")]
+    pub fn memory_dump_ready(&self) -> bool { self.memory_dump.is_ready() }
+    #[cfg(feature = "diag-memdump")]
+    pub fn skip_memory_dump(&mut self, reason: &str) { self.memory_dump.skip(reason); }
+    #[cfg(feature = "diag-memdump")]
+    pub fn validate_memory_dump(&mut self) {
+        if self.child.is_some() || !self.cycle_enabled() || self.cycle_pending() {
+            self.memory_dump.skip("child active or diagnostic export unavailable");
+            return;
+        }
+        match self.prepare_root() {
+            Ok(root) => self.memory_dump.validate(&root),
+            Err(error) => self.memory_dump.skip(&format!("installation root validation refused: {error}")),
+        }
+    }
+    #[cfg(feature = "diag-memdump")]
+    pub fn capture_memory_dump(&mut self) {
+        self.validate_memory_dump();
+        let ms = self.elapsed_ms();
+        self.memory_dump.capture_once(&self.parent, ms);
     }
     pub fn path(&self) -> &Path {
         self.server.path()
@@ -970,6 +1019,14 @@ impl Control {
             { bundle.metadata["io_state"] = json!("not_compiled"); }
             #[cfg(any(feature = "diag-memory", feature = "diag-klog", feature = "diag-uart", feature = "diag-display", feature = "diag-input"))]
             for (name, data) in self.diagnostics.snapshot() { bundle.json(&name, &data)?; }
+            #[cfg(feature = "diag-memdump")]
+            {
+                use crate::diagnostics::memdump::{REPORT_FILE, DATA_FILE};
+                bundle.json(REPORT_FILE, &json!({"scope":"session", "clock":"iman_session", "data":self.memory_dump.report()}))?;
+                if !self.memory_dump.bytes().is_empty() {
+                    bundle.files.insert(DATA_FILE.into(), self.memory_dump.bytes().to_vec());
+                }
+            }
             #[cfg(feature = "diag-input")]
             {
                 bundle.json("diag_input_test.json", &self.input_test.report())?;
@@ -1037,6 +1094,8 @@ impl Control {
     }
 
     pub fn finish(&mut self, error: Option<String>, cancelled: bool) -> io::Result<()> {
+        #[cfg(feature = "diag-memdump")]
+        self.memory_dump.skip("normal session-end capture was not reached");
         // Fallback for failure before a display/session runner was constructed.
         if !cancelled && self.cycle_enabled() {
             if let Err(error) = self.export_segment(error.as_deref(), || {}) {

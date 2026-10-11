@@ -10,6 +10,8 @@ pub const BIOS_DIR: &str = "bios";
 pub const GUI_BINARY: &str = "igui/igui";
 pub const EMULATION_FILE: &str = "iman/emulation.json";
 pub const PROFILE_FILE: &str = "iman/iman.json";
+#[cfg(feature = "diag-memdump")]
+pub const MEMORY_PROFILES_DIR: &str = "system/iman/memory-profiles";
 pub const PERSISTENT_STATES_DIR: &str = "games/states";
 pub const PERSISTENT_SAVES_DIR: &str = "games/saves";
 

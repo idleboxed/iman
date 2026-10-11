@@ -27,6 +27,10 @@ const FILE_NAMES: &[&str] = &[
     "observation.json", "cycle-io.json", "launch.log", "retroarch.log",
     "diag_memory.json", "diag_klog.json", "diag_display.json", "diag_input.json",
     "diag_perf.json", "diag_input_test.json", "diag_uart.json", "diag_uart_ping.json",
+    #[cfg(feature = "diag-memdump")]
+    "diag_memdump.json",
+    #[cfg(feature = "diag-memdump")]
+    "memory-dump.bin",
 ];
 
 fn proposal_basename(name: &str) -> Option<&str> {
@@ -69,6 +73,10 @@ impl Bundle {
         {
             return Err(io::Error::other("invalid bundle or file size limit exceeded"));
         }
+        #[cfg(feature = "diag-memdump")]
+        if self.files.contains_key(crate::diagnostics::memdump::DATA_FILE)
+            && !self.files.contains_key(crate::diagnostics::memdump::REPORT_FILE)
+        { return Err(io::Error::other("memory dump payload requires its structured report")); }
         let proposals: Vec<_> = self.files.iter().filter(|(name, _)| proposal_basename(name).is_some()).collect();
         if proposals.len() > PROPOSAL_FILES_LIMIT || proposals.iter().map(|(_, bytes)| bytes.len()).sum::<usize>() > PROPOSAL_LIMIT
             || (!proposals.is_empty() && (!self.files.contains_key("pads-proposal/summary.json")

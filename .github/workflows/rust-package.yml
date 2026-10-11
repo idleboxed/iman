@@ -61,4 +61,4 @@ jobs:
         run: >-
           cargo +stable check --locked --all-targets
           --target armv7-unknown-linux-musleabihf
-          --no-default-features --features drm,rgb565,diagnostics
+          --no-default-features --features drm,rgb565,diagnostics,diag-memdump

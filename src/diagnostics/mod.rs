@@ -26,6 +26,8 @@ pub mod io_context;
 pub mod klog;
 #[cfg(feature = "diag-memory")]
 pub mod memory;
+#[cfg(feature = "diag-memdump")]
+pub mod memdump;
 #[cfg(feature = "diag-perf")]
 pub mod perf;
 #[cfg(feature = "diag-uart")]

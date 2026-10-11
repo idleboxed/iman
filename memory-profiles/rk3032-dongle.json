@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "description": "Unconfirmed ROM candidate; first word only",
+  "match": {
+    "compatible": "rockchip,rk3032-dongle"
+  },
+  "read": {
+    "enabled": false,
+    "address": "0x10100000",
+    "length": 4,
+    "unit": 4
+  }
+}

@@ -698,6 +698,10 @@ pub fn run_session_with_timing(
             }
         }
     })();
+    #[cfg(feature = "diag-memdump")]
+    let dump_status = present_memory_dump_on_exit(control, display, timing, display_available, result.is_ok());
+    #[cfg(not(feature = "diag-memdump"))]
+    let dump_status: io::Result<()> = Ok(());
     let final_export = if result.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::Interrupted) {
         Ok(())
     } else if control.cycle_enabled() {
@@ -707,7 +711,7 @@ pub fn run_session_with_timing(
     } else {
         Ok(())
     };
-    let cleanup = display.finish().and(final_export);
+    let cleanup = display.finish().and(dump_status).and(final_export);
     control.record_manager_display("session_end", display.take_diagnostics());
     match (result, cleanup) {
         (Ok(()), result) => result,
@@ -802,6 +806,59 @@ fn departure_countdown(
         }
         timing.wait(Duration::from_millis(20));
     }
+    Ok(())
+}
+
+/// Present the active attempt before any device access; final status is RAM capture, never SD durability.
+#[cfg(feature = "diag-memdump")]
+fn present_memory_dump_on_exit(
+    control: &mut Control,
+    display: &mut dyn crate::display::Lease,
+    timing: &mut dyn Timing,
+    available: bool,
+    normal: bool,
+) -> io::Result<()> {
+    if control.memory_dump_report().state == crate::diagnostics::memdump::State::Unprepared {
+        return Ok(());
+    }
+    if !normal || INTERRUPTED.load(Ordering::Relaxed) {
+        control.skip_memory_dump("session failed or was cancelled");
+    } else {
+        control.validate_memory_dump();
+    }
+    if control.memory_dump_ready() {
+        if !available {
+            control.skip_memory_dump("manager status display is unavailable");
+        } else {
+            let status = control.memory_dump_start_status();
+            diagnostic(format_args!("iman: {status}"));
+            match display.export_status(&status, false) {
+                Ok(true) if !INTERRUPTED.load(Ordering::Relaxed) => control.capture_memory_dump(),
+                Ok(true) => control.skip_memory_dump("session was cancelled before reading"),
+                Ok(false) => control.skip_memory_dump("start status was not presented"),
+                Err(error) => {
+                    control.skip_memory_dump("start status presentation failed");
+                    diagnostic(format_args!("iman: {}", control.memory_dump_status()));
+                    return Err(error);
+                }
+            }
+        }
+    }
+    let status = control.memory_dump_status();
+    diagnostic(format_args!("iman: {status}"));
+    if available && !INTERRUPTED.load(Ordering::Relaxed) {
+        let failed = control.memory_dump_report().state == crate::diagnostics::memdump::State::Failed;
+        if display.export_status(&status, failed)? {
+            let began = timing.now();
+            while timing.now().saturating_sub(began) < Duration::from_secs(1) {
+                if INTERRUPTED.load(Ordering::Relaxed) { break; }
+                #[cfg(feature = "pc")]
+                display.poll_events()?;
+                timing.wait(Duration::from_millis(20));
+            }
+        }
+    }
+    control.record_manager_display("memory_dump", display.take_diagnostics());
     Ok(())
 }
 

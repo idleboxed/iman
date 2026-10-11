@@ -17,6 +17,8 @@ diag-perf = ["diag-cycle"]
 diag-klog = ["diag-cycle"]
 diag-memory = ["diag-cycle"]
 diag-uart = ["diag-cycle"]
+# Active physical-memory access is never part of passive diagnostics/default.
+diag-memdump = ["diag-cycle"]
 diag-display = ["diag-cycle"]
 diag-input = ["diag-cycle", "imanlib/input", "dep:embedded-graphics"]
 drm = ["imanlib/drm", "dep:drm", "dep:embedded-graphics"]
