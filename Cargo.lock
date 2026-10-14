@@ -350,7 +350,7 @@ dependencies = [
 [[package]]
 name = "imanlib"
 version = "0.1.0"
-source = "git+https://github.com/idleboxed/imanlib.git?rev=044a989218813a1636847289d3530e1b264513eb#044a989218813a1636847289d3530e1b264513eb"
+source = "git+https://github.com/idleboxed/imanlib.git?rev=3f6f3bb68483058a07b32f814167f1cb9180dd33#3f6f3bb68483058a07b32f814167f1cb9180dd33"
 dependencies = [
  "drm",
  "embedded-graphics",

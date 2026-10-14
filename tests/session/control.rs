@@ -20,22 +20,22 @@ fn exchange(control: &mut Control, client: &mut Client, command: &str, params: V
     let until = Instant::now() + Duration::from_secs(2);
     loop {
         control.poll("gui");
-        if let Some(r) = client.poll().unwrap() {
-            assert_eq!(r.id, id);
-            return r;
+        if let Some(response_item) = client.poll().unwrap() {
+            assert_eq!(response_item.id, id);
+            return response_item;
         }
         assert!(Instant::now() < until, "RPC timed out");
         std::thread::sleep(Duration::from_millis(1));
     }
 }
-fn value(r: Response) -> Value {
-    match r.outcome {
+fn value(response_item: Response) -> Value {
+    match response_item.outcome {
         Outcome::Done { result } => result,
         other => panic!("{other:?}"),
     }
 }
-fn error(r: Response, code: &str) {
-    match r.outcome {
+fn error(response_item: Response, code: &str) {
+    match response_item.outcome {
         Outcome::Error { error } => assert_eq!(error.code, code),
         other => panic!("{other:?}"),
     }
@@ -238,17 +238,17 @@ fn duplicate_request_is_not_reexecuted_without_protocol_version_metadata() {
     let mut peer =
         Channel::new(UnixStream::connect(control.path()).unwrap(), RESPONSE_LIMIT).unwrap();
     for command in ["core.capabilities", "core.exit"] {
-        let r = Request::new(1, command, json!({"extra":true}));
-        peer.queue(&Message::Request(r), 16384).unwrap();
+        let response_item = Request::new(1, command, json!({"extra":true}));
+        peer.queue(&Message::Request(response_item), 16384).unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             peer.flush().unwrap();
             control.poll("gui");
-            if let Some(Message::Response(r)) = peer.receive().unwrap() {
+            if let Some(Message::Response(response_item)) = peer.receive().unwrap() {
                 if command == "core.capabilities" {
-                    assert!(!value(r).as_object().unwrap().contains_key("version"));
+                    assert!(!value(response_item).as_object().unwrap().contains_key("version"));
                 } else {
-                    error(r, "duplicate_id");
+                    error(response_item, "duplicate_id");
                 }
                 break;
             }

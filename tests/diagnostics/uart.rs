@@ -238,9 +238,9 @@ fn collectors_register_export_without_adding_rpc_commands_or_sampling_on_status(
     let mut collectors = iman::diagnostics::collectors::Collectors::with_uart_source(source);
     collectors.enable_defaults();
     assert!(iman::diagnostics::cycle::compiled_modules().contains(&"diag_uart"));
-    assert!(!iman::diagnostics::collectors::Collectors::capabilities().iter().any(|s| s.starts_with("diag_uart.")));
+    assert!(!iman::diagnostics::collectors::Collectors::capabilities().iter().any(|sample| sample.starts_with("diag_uart.")));
     assert_eq!(collectors.snapshot()["diag_uart.json"]["data"]["samples"], 0);
-    assert!(collectors.status_without_gui().iter().any(|s| s == "UART: waiting for diagnostic screen"));
+    assert!(collectors.status_without_gui().iter().any(|sample| sample == "UART: waiting for diagnostic screen"));
     assert_eq!(collectors.snapshot()["diag_uart.json"]["data"]["samples"], 0);
     collectors.stop_and_emit();
     assert_eq!(collectors.snapshot()["diag_uart.json"]["data"]["stopped"], true);

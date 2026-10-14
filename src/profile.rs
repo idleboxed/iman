@@ -148,14 +148,17 @@ impl Profile {
         Ok(())
     }
 
+    /// Borrow the selected parent directory for checked RAM resources.
     pub fn runtime_dir(&self) -> &Path {
         &self.runtime_dir
     }
 
+    /// Borrow the configured GUI display backend settings.
     pub fn display(&self) -> &Display {
         &self.gui.display
     }
 
+    /// Build IGUI arguments from the validated display and input profile.
     pub fn gui_arguments(&self) -> Vec<OsString> {
         let mut args: Vec<OsString> = Vec::new();
         match &self.gui.display {

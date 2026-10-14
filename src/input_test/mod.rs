@@ -92,8 +92,10 @@ impl InputTest {
         }
     }
 
+    /// Report whether discovery and guided controller observations have finished.
     pub fn done(&self) -> bool { !self.discovery && self.current.is_none() }
 
+    /// Build the current controller-test screen from supplied elapsed milliseconds.
     pub fn view(&self, ms: u64) -> View {
         let (stage, seconds) = if self.discovery {
             (Stage::Discover, DISCOVERY_MS.saturating_sub(ms).div_ceil(1000))
@@ -135,7 +137,7 @@ impl InputTest {
         for mut record in self.probe.take_records() {
             let id = record["generation"].as_u64().unwrap_or(0) as u32;
             if record["event"] == "resync" {
-                self.unknown_axes.extend(self.axes.keys().filter(|(g, _)| *g == id).copied());
+                self.unknown_axes.extend(self.axes.keys().filter(|(generation_item, _)| *generation_item == id).copied());
                 invalid |= generation == Some(id);
             }
             if record["event"] == "device_error" {
@@ -149,7 +151,7 @@ impl InputTest {
                     && self.probe.sample_complete && self.controllers.len() < MAX_CONTROLLERS
                     && !self.controllers.iter().any(|controller| controller.generation == id) {
                     if let Some((slot, stream)) = self.probe.streams.iter().enumerate()
-                        .filter_map(|(slot, stream)| stream.as_ref().map(|s| (slot, s)))
+                        .filter_map(|(slot, stream)| stream.as_ref().map(|state| (slot, state)))
                         .find(|(_, stream)| stream.generation == id) {
                         if self.probe.ready(slot) {
                             self.controllers.push(Controller { generation: id, info: stream.info.clone(),
@@ -180,7 +182,7 @@ impl InputTest {
             }
             self.record(record);
         }
-        self.axes.retain(|(id, _), _| self.probe.streams.iter().flatten().any(|s| s.generation == *id));
+        self.axes.retain(|(id, _), _| self.probe.streams.iter().flatten().any(|state| state.generation == *id));
         self.unknown_axes.retain(|key| self.axes.contains_key(key));
         if self.discovery {
             if ms >= DISCOVERY_MS {
@@ -192,7 +194,7 @@ impl InputTest {
         let Some(index) = self.current else { return; };
         let id = self.controllers[index].generation;
         let stream = self.probe.streams.iter().enumerate()
-            .filter_map(|(slot, stream)| stream.as_ref().map(|s| (slot, s)))
+            .filter_map(|(slot, stream)| stream.as_ref().map(|state| (slot, state)))
             .find(|(_, stream)| stream.generation == id);
         if let Some((slot, stream)) = stream {
             if let Some(started) = self.preparing_since {
@@ -204,9 +206,9 @@ impl InputTest {
                 // must return to neutral before the first prompt can be armed.
                 return;
             }
-            invalid |= self.unknown_axes.iter().any(|(g, _)| *g == id);
+            invalid |= self.unknown_axes.iter().any(|(generation_item, _)| *generation_item == id);
             if invalid { self.guide.invalidate(); }
-            let axes = self.axes.iter().filter(|((g, _), _)| *g == id).map(|(key, axis)| (*key, *axis)).collect();
+            let axes = self.axes.iter().filter(|((generation_item, _), _)| *generation_item == id).map(|(key, axis)| (*key, *axis)).collect();
             let ready = !invalid && self.probe.sample_complete && self.probe.ready(slot);
             self.guide.sample(ms, &raw, ready, stream.buttons_down().is_empty(), &axes);
         } else {
@@ -227,6 +229,7 @@ impl InputTest {
         }
     }
 
+    /// Describe the actual discovered controllers and fresh input evidence.
     pub fn result_message(&self) -> String {
         if self.probe.connections == 0 { "No matching input devices opened".into() }
         else if self.controllers.is_empty() { "Input devices opened, but no fresh button presses".into() }
@@ -241,8 +244,10 @@ impl InputTest {
         if self.inventory.len() < 2 { self.inventory.push(json!({"ms":ms, "data":data})); }
     }
 
+    /// Finish pending steps and return the controller report without exposing proposal files.
     pub fn finish(self, ms: u64, reason: &str) -> Value { self.finish_with_proposals(ms, reason).report }
 
+    /// Finish pending steps and return the report plus unapplied profile proposals.
     pub fn finish_with_proposals(mut self, ms: u64, reason: &str) -> Completion {
         if let Some(index) = self.current {
             self.guide.cancel_remaining(ms, "cancelled");
@@ -252,16 +257,16 @@ impl InputTest {
         let summary = self.probe.finish(ms, reason);
         for record in self.probe.take_records() { self.record(record); }
         let unconfirmed: Vec<_> = self.probe.streams.iter().flatten()
-            .filter(|s| !self.controllers.iter().any(|c| c.generation == s.generation))
-            .map(|s| json!({"generation":s.generation,"path":s.info.path,"status":"not_confirmed"})).collect();
+            .filter(|state| !self.controllers.iter().any(|control_item| control_item.generation == state.generation))
+            .map(|state| json!({"generation":state.generation,"path":state.info.path,"status":"not_confirmed"})).collect();
         let proposals = proposal::generate(&self.controllers.iter().enumerate().map(|(index, controller)|
             proposal::Participant { number: index + 1, generation: controller.generation,
                 info: &controller.info, steps: &controller.steps }).collect::<Vec<_>>());
         let proposal_status = json!({"candidate_only":true,"applied":false,"files":proposals.files.keys().collect::<Vec<_>>(),
             "summary":proposals.files.contains_key("pads-proposal/summary.json").then_some("pads-proposal/summary.json"),
             "physical_labels_verified":false});
-        let controllers: Vec<_> = self.controllers.into_iter().enumerate().map(|(i, c)| json!({
-            "number":i + 1,"generation":c.generation,"path":c.info.path,"status":c.outcome,"steps":c.steps,
+        let controllers: Vec<_> = self.controllers.into_iter().enumerate().map(|(index_item, control_item)| json!({
+            "number":index_item + 1,"generation":control_item.generation,"path":control_item.info.path,"status":control_item.outcome,"steps":control_item.steps,
         })).collect();
         let report = json!({"format":"IMAN-INPUT-TEST-2","owner":"iman","clock":"input_test_elapsed",
             "clock_unit":"milliseconds","duration_ms":ms,"reason":reason,"mapping_written":false,

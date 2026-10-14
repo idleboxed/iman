@@ -62,7 +62,7 @@ fn only_responding_controllers_get_twenty_five_steps_not_four_fixed_passes() {
         assert_eq!(report["unconfirmed"].as_array().unwrap().len(), 4 - count);
         for controller in report["controllers"].as_array().unwrap() {
             assert_eq!(controller["steps"].as_array().unwrap().len(), 25);
-            assert!(controller["steps"].as_array().unwrap().iter().all(|s| s["outcome"] == "no_response"));
+            assert!(controller["steps"].as_array().unwrap().iter().all(|step_item| step_item["outcome"] == "no_response"));
         }
         assert_eq!(report["mapping_written"], false);
         assert_eq!(report["physical_players_verified"], false);
@@ -138,7 +138,7 @@ fn four_pad_outcomes_survive_a_noisy_raw_journal() {
     assert!(report["records_omitted"].as_u64().unwrap() > 0);
     assert_eq!(report["inventory"].as_array().unwrap().len(), 2);
     assert_eq!(report["controllers"].as_array().unwrap().iter()
-        .map(|c| c["steps"].as_array().unwrap().len()).sum::<usize>(), 100);
+        .map(|controller_item| controller_item["steps"].as_array().unwrap().len()).sum::<usize>(), 100);
     assert!(serde_json::to_vec(&report).unwrap().len() < 64 * 1024);
     assert!(report["input_stats"]["evdev"]["events"].as_u64().unwrap() > 2_000);
 }
@@ -228,11 +228,11 @@ fn preparation_and_boundary_taps_do_not_answer_the_first_prompt_or_spend_its_tim
     assert_eq!(test.guide.results[0]["outcome"], "no_response");
     assert_eq!(test.guide.results[0]["started_ms"], started);
     let report = test.finish(started + STEP_MS, "cancelled");
-    for record in report["records"].as_array().unwrap().iter().filter(|r| r["phase"] == "prepare") {
+    for record in report["records"].as_array().unwrap().iter().filter(|record_item| record_item["phase"] == "prepare") {
         assert_eq!(record["controller"], 1);
         assert!(record.get("step").is_none());
     }
-    assert!(report["records"].as_array().unwrap().iter().any(|r| r["phase"] == "prepare" && r["ms"] == started));
+    assert!(report["records"].as_array().unwrap().iter().any(|record_item| record_item["phase"] == "prepare" && record_item["ms"] == started));
 }
 
 #[test]
@@ -300,8 +300,8 @@ fn all_prompts_render_with_a_small_step_label_and_separate_home_start_buttons() 
             }).unwrap();
             let pixels = frame.pixels();
             let background = 0x0f151d;
-            assert!(pixels[160 * 1280..210 * 1280].iter().all(|&p| p == background));
-            assert!(pixels[137 * 1280..157 * 1280].iter().any(|&p| p != background));
+            assert!(pixels[160 * 1280..210 * 1280].iter().all(|&pixel| pixel == background));
+            assert!(pixels[137 * 1280..157 * 1280].iter().any(|&pixel| pixel != background));
             // HOME is above the central row; START ends before the X face button.
             assert_eq!(pixels[397 * 1280 + 639], 0x26333c);
             assert_eq!(pixels[421 * 1280 + 722], 0x26333c);

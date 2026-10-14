@@ -17,12 +17,12 @@ pub fn verify_presented_route<M: DisplayMode>(
     after: &Topology<M>,
     crtc: u32,
 ) -> io::Result<()> {
-    let framebuffer = after.crtcs.iter().find(|c| c.id == crtc)
-        .and_then(|c| c.framebuffer)
+    let framebuffer = after.crtcs.iter().find(|connector| connector.id == crtc)
+        .and_then(|connector| connector.framebuffer)
         .filter(|id| *id != 0)
         .ok_or_else(|| io::Error::other("presented CRTC has no framebuffer"))?;
     let mut expected = before.clone();
-    let selected = expected.crtcs.iter_mut().find(|c| c.id == crtc)
+    let selected = expected.crtcs.iter_mut().find(|connector| connector.id == crtc)
         .ok_or_else(|| io::Error::other("presented CRTC is not in the original route"))?;
     selected.framebuffer = Some(framebuffer);
     expected.verify_unchanged(after)
@@ -40,6 +40,7 @@ pub struct Owner<B: Backend> {
 }
 
 impl<B: Backend> Owner<B> {
+    /// Acquire the supplied display backend and prepare the first checked frame.
     pub fn start(backend: B, frame: &Surface, allow_vendor_einval: bool) -> io::Result<Self> {
         let mut display = Self {
             backend,
@@ -71,21 +72,23 @@ impl<B: Backend> Owner<B> {
                 log(format_args!("DISPLAY SET_MASTER ok; acquired=true"));
                 Ok(())
             }
-            Err(e) if self.allow_vendor_einval && e.raw_os_error() == Some(libc::EINVAL) => {
+            Err(error) if self.allow_vendor_einval && error.raw_os_error() == Some(libc::EINVAL) => {
                 log(format_args!("DISPLAY SET_MASTER EINVAL; acquired=false; explicit vendor mode; NOT proof of exclusive ownership"));
                 Ok(())
             }
-            Err(e) => {
-                log(format_args!("DISPLAY SET_MASTER failed: {e}"));
-                Err(e)
+            Err(error) => {
+                log(format_args!("DISPLAY SET_MASTER failed: {error}"));
+                Err(error)
             }
         }
     }
 
+    /// Borrow the owned display backend without transferring its resources.
     pub fn backend(&self) -> &B {
         &self.backend
     }
 
+    /// Report whether this owner acquired DRM master.
     pub fn master_acquired(&self) -> bool {
         self.master
     }
@@ -104,6 +107,7 @@ impl<B: Backend> Owner<B> {
         Ok(result)
     }
 
+    /// Present a frame only while the manager owns the active display route.
     pub fn present(&mut self, frame: &Surface) -> io::Result<()> {
         if self.closed || self.yielded {
             return Err(io::Error::other("display is closed or yielded"));
@@ -149,8 +153,8 @@ impl<B: Backend> Owner<B> {
         }
         let mut errors = Vec::new();
         if self.yielded {
-            if let Err(e) = self.reclaim() {
-                errors.push(format!("reclaim: {e}"));
+            if let Err(error) = self.reclaim() {
+                errors.push(format!("reclaim: {error}"));
             }
         }
         self.closed = true;
@@ -188,8 +192,8 @@ impl<B: Backend> Owner<B> {
                 },
             ),
         ] {
-            if let Err(e) = result {
-                errors.push(format!("{name}: {e}"));
+            if let Err(error) = result {
+                errors.push(format!("{name}: {error}"));
             }
         }
         if errors.is_empty() {
@@ -202,12 +206,13 @@ impl<B: Backend> Owner<B> {
 
 impl<B: Backend> Drop for Owner<B> {
     fn drop(&mut self) {
-        if let Err(e) = self.finish() {
-            log(format_args!("DISPLAY cleanup failed: {e}"));
+        if let Err(error) = self.finish() {
+            log(format_args!("DISPLAY cleanup failed: {error}"));
         }
     }
 }
 
+/// Write a best-effort diagnostic line to the configured stderr sink without panicking.
 pub fn log(message: std::fmt::Arguments<'_>) {
     use std::io::Write;
     // A full bounded RAM journal is an I/O error, not a panic on stderr.

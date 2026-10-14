@@ -30,7 +30,7 @@ path = "tools/splash_preview.rs"
 required-features = ["drm"]
 
 [dependencies]
-imanlib = { git = "https://github.com/idleboxed/imanlib.git", rev = "044a989218813a1636847289d3530e1b264513eb" }
+imanlib = { git = "https://github.com/idleboxed/imanlib.git", rev = "3f6f3bb68483058a07b32f814167f1cb9180dd33" }
 minifb = { version = "=0.28.0", default-features = false, features = ["x11"], optional = true }
 drm = { version = "=0.14.1", optional = true }
 embedded-graphics = { version = "=0.8.2", optional = true }

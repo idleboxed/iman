@@ -8,6 +8,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// Move a held file above descriptors 0..2 so standard-stream setup cannot overwrite it.
 pub(crate) fn above_stdio(file: File) -> io::Result<File> {
     if file.as_raw_fd() > 2 { return Ok(file); }
     let fd = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
@@ -55,6 +56,7 @@ impl Root {
         Ok(root)
     }
 
+    /// Borrow the installation path pinned by this root handle.
     pub fn path(&self) -> &Path { &self.path }
 
     /// Refuse a renamed/replaced root, rather than switching the session's destination.
@@ -68,6 +70,7 @@ impl Root {
         Ok(())
     }
 
+    /// Borrow the held root directory only after rechecking its path identity.
     pub fn directory(&self) -> io::Result<&File> {
         self.validate()?;
         Ok(&self.directory)
@@ -91,10 +94,12 @@ impl Root {
         Ok(parent)
     }
 
+    /// Open a checked relative directory under the held installation root without following links.
     pub fn open_directory(&self, relative: &str) -> io::Result<File> {
         self.open_relative(relative, true)
     }
 
+    /// Open a same-device regular file with one hard link under the held root.
     pub fn open_file(&self, relative: &str) -> io::Result<File> {
         let file = self.open_relative(relative, false)?;
         let meta = file.metadata()?;
@@ -104,6 +109,7 @@ impl Root {
         Ok(file)
     }
 
+    /// Open a checked installation file and require executable permissions.
     pub fn open_executable(&self, relative: &str) -> io::Result<File> {
         let file = self.open_file(relative)?;
         if file.metadata()?.mode() & 0o111 == 0 {

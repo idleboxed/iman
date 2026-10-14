@@ -44,7 +44,7 @@ pub fn report_json(gui: &Monitor, manager: &Monitor) -> io::Result<String> {
             (None, None) => return Err(io::Error::other("display report exceeds limit")),
             (Some(_), None) => &mut report.gui.report,
             (None, Some(_)) => &mut report.manager.report,
-            (Some(a), Some(b)) if a <= b => &mut report.gui.report,
+            (Some(first_statistics), Some(second_statistics)) if first_statistics <= second_statistics => &mut report.gui.report,
             _ => &mut report.manager.report,
         };
         oldest.history.pop_front();
@@ -73,6 +73,7 @@ impl Default for Measurements {
 }
 
 impl Measurements {
+    /// Accumulate one manager rendering duration and whether only footer data changed.
     pub fn render(&mut self, elapsed: Duration, footer_only: bool) {
         let us = elapsed.as_micros();
         self.render.requests += 1;
@@ -97,15 +98,18 @@ impl Measurements {
         self.render.partial_cost.record(us);
     }
 
+    /// Accumulate presentation timing and remember an unsuccessful display operation.
     pub fn present(&mut self, elapsed: Duration, success: bool) {
         self.present.record(elapsed.as_micros());
         self.operation_ok &= success;
     }
 
+    /// Mark the observed display interval as unsuccessful.
     pub fn failed(&mut self) {
         self.operation_ok = false;
     }
 
+    /// Describe current KMS progress or its absence in the diagnostic status line.
     pub fn status(&self, kms: Option<&KmsState>) -> String {
         let output = kms.map_or_else(
             || "KMS unavailable (desktop)".into(),
@@ -118,6 +122,7 @@ impl Measurements {
         )
     }
 
+    /// Return the completed DRM observation duration and final display sample.
     pub fn finish(self, kms: KmsState, cleanup_ok: Option<bool>) -> (Duration, Sample) {
         self.sample(Backend::Drm, Some(kms), cleanup_ok)
     }

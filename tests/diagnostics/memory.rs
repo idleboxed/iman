@@ -40,7 +40,7 @@ fn fixture() -> (tempfile::TempDir, Source) {
 #[test]
 fn status_keeps_real_zero_and_rejects_unknown_duplicate_invalid_units_and_overflow() {
     assert_eq!(parse_status(&status(41, 0), 41).unwrap(), (0, 8192 * 1024));
-    for s in [
+    for sample_item in [
         String::new(),
         status(42, 1),
         "Pid: 41\nVmSize: 1 kB\n".into(),
@@ -52,7 +52,7 @@ fn status_keeps_real_zero_and_rejects_unknown_duplicate_invalid_units_and_overfl
         status(41, 1).replace("kB", "kB extra"),
         "x".repeat(STATUS_LIMIT + 1),
     ] {
-        assert!(parse_status(&s, 41).is_err(), "{s}");
+        assert!(parse_status(&sample_item, 41).is_err(), "{sample_item}");
     }
     assert!(parse_status(&status(0, 0), 0).is_err());
 }
@@ -121,7 +121,7 @@ fn source_is_explicit_read_only_bounded_and_keeps_independent_failures_unknown()
 #[test]
 fn monitor_has_no_catchup_burst_and_recovers_without_reusing_stale_samples() {
     let (_dir, source) = fixture();
-    let mut m = Monitor::default();
+    let mut monitor = Monitor::default();
     let reads = Cell::new(0);
     for (ms, expected) in [
         (0, 1),
@@ -131,38 +131,38 @@ fn monitor_has_no_catchup_burst_and_recovers_without_reusing_stale_samples() {
         (20_000, 3),
         (20_001, 3),
     ] {
-        m.poll(ms, "gui", || {
+        monitor.poll(ms, "gui", || {
             reads.set(reads.get() + 1);
             source.sample(41, None)
         });
         assert_eq!(reads.get(), expected);
     }
-    m.poll(22_000, "game", || Err(io::Error::other("lost procfs")));
-    let sample = m.report().history.back().unwrap();
+    monitor.poll(22_000, "game", || Err(io::Error::other("lost procfs")));
+    let sample = monitor.report().history.back().unwrap();
     assert!(sample.reading.value.is_none());
     assert_eq!(sample.reading.error.as_deref(), Some("lost procfs"));
-    m.poll(24_000, "game", || source.sample(41, Some(42)));
-    assert!(m.report().history.back().unwrap().reading.value.is_some());
-    assert_eq!(m.report().read_errors, 1);
-    m.stop();
-    m.poll(26_000, "game", || panic!("stopped monitor reads"));
-    assert!(m.report().stopped);
+    monitor.poll(24_000, "game", || source.sample(41, Some(42)));
+    assert!(monitor.report().history.back().unwrap().reading.value.is_some());
+    assert_eq!(monitor.report().read_errors, 1);
+    monitor.stop();
+    monitor.poll(26_000, "game", || panic!("stopped monitor reads"));
+    assert!(monitor.report().stopped);
 }
 
 #[test]
 fn child_pid_reuse_stays_separate_in_history_and_peaks_survive_trimming() {
     let (dir, source) = fixture();
-    let mut m = Monitor::default();
-    m.poll(0, "gui", || source.sample(41, Some(42)));
+    let mut monitor = Monitor::default();
+    monitor.poll(0, "gui", || source.sample(41, Some(42)));
     write(&dir.path().join("42/stat"), &stat(42, 200));
     write(&dir.path().join("42/status"), &status(42, 500));
-    m.poll(INTERVAL_MS, "game", || source.sample(41, Some(42)));
-    let starts: Vec<_> = m
+    monitor.poll(INTERVAL_MS, "game", || source.sample(41, Some(42)));
+    let starts: Vec<_> = monitor
         .report()
         .history
         .iter()
-        .map(|s| {
-            s.reading
+        .map(|sample_item| {
+            sample_item.reading
                 .value
                 .as_ref()
                 .unwrap()
@@ -177,30 +177,30 @@ fn child_pid_reuse_stays_separate_in_history_and_peaks_survive_trimming() {
         })
         .collect();
     assert_eq!(starts, [100, 200]);
-    for n in 2..80 {
-        m.poll(n * INTERVAL_MS, "game", || {
+    for count in 2..80 {
+        monitor.poll(count * INTERVAL_MS, "game", || {
             Err(io::Error::other("\"\n".repeat(5000)))
         });
     }
-    assert_eq!(m.report().history.len(), HISTORY_LIMIT);
-    assert_eq!(m.report().child_rss_max_bytes, Some(500 * 1024));
-    let text = m.report_json().unwrap();
+    assert_eq!(monitor.report().history.len(), HISTORY_LIMIT);
+    assert_eq!(monitor.report().child_rss_max_bytes, Some(500 * 1024));
+    let text = monitor.report_json().unwrap();
     assert!(text.len() <= REPORT_LIMIT);
-    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["samples"], 80);
-    assert_eq!(v["available_min_bytes"], 2048 * 1024);
-    assert!(v["history_dropped"].as_u64().unwrap() >= 64);
-    assert_eq!(m.report().history.len(), HISTORY_LIMIT);
+    let value_item: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value_item["samples"], 80);
+    assert_eq!(value_item["available_min_bytes"], 2048 * 1024);
+    assert!(value_item["history_dropped"].as_u64().unwrap() >= 64);
+    assert_eq!(monitor.report().history.len(), HISTORY_LIMIT);
 }
 
 #[test]
 fn invalid_phase_or_regressing_clock_stops_only_the_collector_without_reading() {
     for (ms, phase) in [(9, "gui"), (10, "bad\nphase"), (10, "")] {
-        let mut m = Monitor::default();
-        m.poll(10, "gui", || Err(io::Error::other("not available")));
-        m.poll(ms, phase, || panic!("invalid observation must not read"));
-        assert!(m.report().stopped);
-        assert!(m.report().error.is_some());
+        let mut monitor = Monitor::default();
+        monitor.poll(10, "gui", || Err(io::Error::other("not available")));
+        monitor.poll(ms, phase, || panic!("invalid observation must not read"));
+        assert!(monitor.report().stopped);
+        assert!(monitor.report().error.is_some());
     }
 }
 
@@ -208,10 +208,10 @@ fn invalid_phase_or_regressing_clock_stops_only_the_collector_without_reading() 
 fn serialized_history_is_trimmed_without_losing_peaks_or_live_history() {
     use iman::diagnostics::memory::{ProcessSample, Snapshot};
     let (_dir, source) = fixture();
-    let mut m = Monitor::default();
-    m.poll(0, "gui", || source.sample(41, Some(42)));
-    for n in 1..=16 {
-        m.poll(n * INTERVAL_MS, "game", || {
+    let mut monitor = Monitor::default();
+    monitor.poll(0, "gui", || source.sample(41, Some(42)));
+    for count in 1..=16 {
+        monitor.poll(count * INTERVAL_MS, "game", || {
             let error = || io::Error::other("Я".repeat(120));
             Ok(Snapshot {
                 system: Err(error()).into(),
@@ -226,12 +226,12 @@ fn serialized_history_is_trimmed_without_losing_peaks_or_live_history() {
             })
         });
     }
-    let text = m.report_json().unwrap();
+    let text = monitor.report_json().unwrap();
     assert!(text.len() <= REPORT_LIMIT);
-    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["samples"], 17);
-    assert_eq!(v["read_errors"], 48);
-    assert!(v["history_dropped"].as_u64().unwrap() > 1);
-    assert_eq!(v["manager_rss_max_bytes"], 41 * 1024);
-    assert_eq!(m.report().history.len(), HISTORY_LIMIT);
+    let value_item: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value_item["samples"], 17);
+    assert_eq!(value_item["read_errors"], 48);
+    assert!(value_item["history_dropped"].as_u64().unwrap() > 1);
+    assert_eq!(value_item["manager_rss_max_bytes"], 41 * 1024);
+    assert_eq!(monitor.report().history.len(), HISTORY_LIMIT);
 }

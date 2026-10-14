@@ -35,12 +35,12 @@ pub fn device_names(value: &str) -> io::Result<Vec<String>> {
     let names: Vec<_> = value.split(',').map(str::to_owned).collect();
     if names.is_empty()
         || names.len() > 2
-        || names.iter().any(|s| {
-            s.is_empty()
-                || s.len() > 32
-                || !s
+        || names.iter().any(|sample_item| {
+            sample_item.is_empty()
+                || sample_item.len() > 32
+                || !sample_item
                     .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+                    .all(|second_stamp| second_stamp.is_ascii_alphanumeric() || b"_-".contains(&second_stamp))
         })
         || (names.len() == 2 && names[0] == names[1])
     {
@@ -81,8 +81,8 @@ pub fn partition_devices(sysfs: &Path, device: u64) -> io::Result<Vec<String>> {
     let disk_dev = sysfs_value(&disk.join("dev"))?;
     let valid_dev = disk_dev.split_once(':').is_some_and(|(major, minor)| {
         !major.is_empty() && !minor.is_empty()
-            && major.bytes().all(|b| b.is_ascii_digit())
-            && minor.bytes().all(|b| b.is_ascii_digit())
+            && major.bytes().all(|second_stamp| second_stamp.is_ascii_digit())
+            && minor.bytes().all(|second_stamp| second_stamp.is_ascii_digit())
             && major.parse::<u32>().is_ok() && minor.parse::<u32>().is_ok()
     });
     if !valid_dev || sysfs.join("dev/block").join(&disk_dev).canonicalize()? != disk {
@@ -94,7 +94,7 @@ pub fn partition_devices(sysfs: &Path, device: u64) -> io::Result<Vec<String>> {
         Ok(_) => return Err(io::Error::other("partition parent is not a whole disk")),
     }
     let name = |path: &Path| {
-        path.file_name().and_then(|s| s.to_str()).map(str::to_owned)
+        path.file_name().and_then(|sample_item| sample_item.to_str()).map(str::to_owned)
             .ok_or_else(|| io::Error::other("invalid sysfs block device name"))
     };
     device_names(&format!("{},{}", name(disk)?, name(&partition)?))
@@ -141,11 +141,11 @@ pub fn parse_diskstats(text: &str, names: &[String]) -> io::Result<Vec<DiskStats
             if rows.next().is_some() || fields.len() < 14 {
                 return Err(io::Error::other("duplicate or short diskstats row"));
             }
-            let number = |s: &str| s.parse::<u64>().map_err(io::Error::other);
+            let number = |sample_item: &str| sample_item.parse::<u64>().map_err(io::Error::other);
             // Validate all counters, including fields not currently reported.
             let counters: Vec<_> = fields[3..]
                 .iter()
-                .map(|s| number(s))
+                .map(|sample_item| number(sample_item))
                 .collect::<io::Result<_>>()?;
             Ok(DiskStats {
                 name: name.clone(),
@@ -221,6 +221,7 @@ pub struct Recorder {
 }
 
 impl Recorder {
+    /// Validate selected block-device names and create empty write-observation state.
     pub fn new(names: Vec<String>) -> io::Result<Self> {
         device_names(&names.join(","))?;
         Ok(Self {
@@ -247,6 +248,7 @@ impl Recorder {
         })
     }
 
+    /// Borrow the accumulated write-observation report.
     pub fn report(&self) -> &Report {
         &self.report
     }
@@ -263,8 +265,8 @@ impl Recorder {
             .checked_sub(self.report.elapsed_ms)
             .ok_or_else(|| io::Error::other("monotonic time moved backwards"))?;
         let latest = parse_diskstats(text, &self.names)?;
-        let subtract = |a: u64, b: u64| {
-            a.checked_sub(b).ok_or_else(|| {
+        let subtract = |first_stamp: u64, second_stamp: u64| {
+            first_stamp.checked_sub(second_stamp).ok_or_else(|| {
                 io::Error::other("disk counter decreased: reset or wrap; observation stopped")
             })
         };
@@ -324,7 +326,7 @@ impl Recorder {
             .report
             .history
             .back()
-            .map_or(phase, |s| s.phase.as_str())
+            .map_or(phase, |sample_item| sample_item.phase.as_str())
             .to_owned();
         if !self.report.latest.is_empty() {
             let aggregate = self
@@ -356,10 +358,10 @@ impl Recorder {
             interval_phase,
             reads,
             writes,
-            in_flight: latest.iter().map(|s| s.in_flight).collect(),
+            in_flight: latest.iter().map(|sample_item| sample_item.in_flight).collect(),
         });
         let sample = self.report.history.back().unwrap();
-        if sample.reads.iter().chain(&sample.writes).any(|v| v.ios != 0 || v.bytes != 0 || v.request_ms != 0) {
+        if sample.reads.iter().chain(&sample.writes).any(|value_item| value_item.ios != 0 || value_item.bytes != 0 || value_item.request_ms != 0) {
             self.report.activity.push_back(sample.clone());
             if self.report.activity.len() > 16 {
                 self.report.activity.pop_front();
@@ -393,14 +395,15 @@ impl Recorder {
         next.report.samples_seen = 1;
         next.report.history.push_back(Sample {
             elapsed_ms:self.report.elapsed_ms, interval_ms:0, phase:phase.into(), interval_phase:phase.into(),
-            reads:next.report.read_totals.clone(), writes:next.report.totals.clone(), in_flight:self.report.latest.iter().map(|d| d.in_flight).collect(),
+            reads:next.report.read_totals.clone(), writes:next.report.totals.clone(), in_flight:self.report.latest.iter().map(|device_item| device_item.in_flight).collect(),
         });
         Ok(next)
     }
 
+    /// Finish recording, retaining a bounded failure reason when observation failed.
     pub fn stop(&mut self, error: Option<&str>) {
         self.report.finished = error.is_none();
-        self.report.error = error.map(|s| s.chars().take(256).collect());
+        self.report.error = error.map(|sample_item| sample_item.chars().take(256).collect());
     }
 }
 
@@ -412,6 +415,7 @@ pub struct RamReport {
 }
 
 impl RamReport {
+    /// Create a private report file under a checked tmpfs parent.
     pub fn create(parent: &Path) -> io::Result<Self> {
         let dir = OpenOptions::new()
             .read(true)
@@ -432,14 +436,16 @@ impl RamReport {
             .suffix(".json")
             .tempfile_in(anchored)?;
         let path = parent.join(temp.path().file_name().unwrap());
-        let (file, _) = temp.keep().map_err(|e| e.error)?;
+        let (file, _) = temp.keep().map_err(|error_item| error_item.error)?;
         Ok(Self { file, path })
     }
 
+    /// Return the owned RAM report's path.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
+    /// Encode and write a bounded observation report to the owned RAM file.
     pub fn write(&mut self, report: &Report) -> io::Result<()> {
         let mut bytes = serde_json::to_vec(report)?;
         bytes.push(b'\n');
@@ -470,14 +476,17 @@ fn diskstats() -> io::Result<String> {
 }
 
 impl Monitor {
+    /// Borrow the recorder's current write-observation report.
     pub fn report(&self) -> &Report {
         self.recorder.report()
     }
 
+    /// Start write observation using the system's monotonic clock.
     pub fn start(names: Vec<String>, parent: &Path) -> io::Result<Self> {
         Self::start_at(names, parent, Instant::now())
     }
 
+    /// Start write observation relative to a supplied session start instant.
     pub fn start_at(names: Vec<String>, parent: &Path, started: Instant) -> io::Result<Self> {
         Self::start_using(names, parent, started, Box::new(diskstats))
     }
@@ -512,6 +521,7 @@ impl Monitor {
         self.sample(phase, false);
     }
 
+    /// Sample counters at an explicit session-phase boundary.
     pub fn boundary(&mut self, phase: &str) {
         self.sample(phase, true);
     }
@@ -524,6 +534,7 @@ impl Monitor {
         Ok(())
     }
 
+    /// Borrow the current segment's counters, if a segment was started.
     pub fn segment_report(&self) -> Option<&Report> {
         self.segment.as_ref().map(Recorder::report)
     }
@@ -556,6 +567,7 @@ impl Monitor {
         }
     }
 
+    /// Take the final observation and close its RAM report without retrying failed sampling.
     pub fn finish(&mut self) {
         if !self.stopped {
             self.poll("session_end");

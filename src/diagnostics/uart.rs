@@ -68,14 +68,15 @@ pub struct Snapshot {
     pub records_truncated: bool,
 }
 impl Snapshot {
+    /// Count unavailable sources in this passive UART snapshot.
     pub fn read_errors(&self) -> usize {
-        self.files.values().filter(|v| v.error.is_some()).count()
+        self.files.values().filter(|value_item| value_item.error.is_some()).count()
             + usize::from(self.dev_mem.error.is_some())
-            + self.scans.values().map(|s| s.errors.len()).sum::<usize>()
+            + self.scans.values().map(|sample| sample.errors.len()).sum::<usize>()
     }
 
     fn insert(&mut self, path: &Path, selection: &'static str, result: io::Result<String>) {
-        let Some(path) = path.to_str().filter(|s| s.is_ascii() && s.len() <= PATH_LIMIT) else {
+        let Some(path) = path.to_str().filter(|sample| sample.is_ascii() && sample.len() <= PATH_LIMIT) else {
             self.records_truncated = true;
             return;
         };
@@ -108,6 +109,7 @@ pub struct Source {
 impl Source {
     /// Alternate Linux roots are for fixtures; construction performs no I/O.
     pub fn new(root: PathBuf) -> Self { Self { root } }
+    /// Select the normal Linux root for later passive UART inspection.
     pub fn system() -> Self { Self::new("/".into()) }
 
     fn text(&self, path: &Path) -> io::Result<String> {
@@ -158,7 +160,7 @@ impl Source {
                 Err(error) => scan.failed(error),
             }
         }
-        found.sort_by(|a, b| a.0.cmp(&b.0));
+        found.sort_by(|first_sample, second_sample| first_sample.0.cmp(&second_sample.0));
         found
     }
 
@@ -177,7 +179,7 @@ impl Source {
             scan.matches += 1;
             let base = Path::new(root).join(name);
             let path = base.join(if tty { "device" } else { "driver" });
-            let link = fs::read_link(self.root.join(&path)).map(|p| p.to_string_lossy().into_owned());
+            let link = fs::read_link(self.root.join(&path)).map(|part| part.to_string_lossy().into_owned());
             snapshot.insert(&path, "symlink_target_only", link);
         }
         scan
@@ -294,8 +296,11 @@ impl Default for Monitor {
     }
 }
 impl Monitor {
+    /// Borrow the one-shot passive UART report.
     pub fn report(&self) -> &Report { &self.report }
+    /// Stop any future passive UART observation.
     pub fn stop(&mut self) { self.report.stopped = true; }
+    /// Attempt one passive snapshot only during the manager's diagnostic interval.
     pub fn poll(&mut self, ms: u64, phase: &str, read: impl FnOnce() -> io::Result<Snapshot>) {
         // Only the existing manager diagnostic interval may trigger this one-shot
         // observation. GUI/game/export polls must not read even the first source.
@@ -310,6 +315,7 @@ impl Monitor {
         self.report.snapshot = reading.value;
         self.report.error = reading.error;
     }
+    /// Encode the passive UART report within its fixed byte limit.
     pub fn report_json(&self) -> io::Result<String> {
         let text = serde_json::to_string(&self.report)?;
         if text.len() > REPORT_LIMIT { return Err(io::Error::other("UART report exceeds limit")); }

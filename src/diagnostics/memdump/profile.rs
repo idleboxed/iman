@@ -22,6 +22,7 @@ pub struct Identity {
 
 /// Platform selection uses DT compatible; other software identity is report-only.
 pub trait Platform {
+    /// Read bounded software platform identity without accessing physical memory.
     fn identify(&self) -> io::Result<Identity>;
 }
 
@@ -29,6 +30,7 @@ pub struct LinuxPlatform { root: PathBuf }
 impl LinuxPlatform {
     /// Alternate roots are for offline fixtures, not a runtime path override.
     pub fn new(root: PathBuf) -> Self { Self { root } }
+    /// Select normal Linux identity paths without reading them during construction.
     pub fn system() -> Self { Self::new("/".into()) }
 }
 
@@ -76,6 +78,7 @@ pub struct Matcher {
     pub compatible: String,
 }
 impl Matcher {
+    /// Match one exact device-tree compatible value against the observed platform identity.
     pub fn matches(&self, identity: &Identity) -> bool {
         identity.compatible.contains(&self.compatible)
     }
@@ -115,6 +118,7 @@ fn parse_address(value: &str) -> io::Result<u64> {
 }
 
 impl Profile {
+    /// Decode a bounded memory profile and validate its physical-read plan.
     pub fn parse(bytes: &[u8]) -> io::Result<Self> {
         if bytes.len() > PROFILE_LIMIT { return Err(io::Error::other("memory profile size limit exceeded")); }
         let profile: Self = serde_json::from_slice(bytes).map_err(io::Error::other)?;
@@ -122,6 +126,7 @@ impl Profile {
         Ok(profile)
     }
 
+    /// Validate schema, address alignment and read bounds, returning the requested physical range.
     pub fn plan(&self) -> io::Result<ReadPlan> {
         if self.schema != 1 || !valid_label(&self.description) || !valid_label(&self.matcher.compatible)
             || !matches!(self.read.unit, 1 | 2 | 4) || self.read.length == 0
@@ -169,6 +174,7 @@ fn read_profile(root: &Root, filename: &str) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Choose at most one checked profile matching the platform, rejecting ambiguity.
 pub fn select(root: &Root, identity: &Identity) -> io::Result<Option<Selection>> {
     let directory = match root.open_directory(MEMORY_PROFILES_DIR) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -200,6 +206,7 @@ pub fn select(root: &Root, identity: &Identity) -> io::Result<Option<Selection>>
 }
 
 impl Selection {
+    /// Require the held root and selected profile bytes to remain unchanged.
     pub fn validate(&self, root: &Root) -> io::Result<()> {
         let bytes = read_profile(root, &self.filename)?;
         if format!("{:x}", Sha256::digest(&bytes)) != self.sha256 {

@@ -10,10 +10,11 @@ use std::{
 
 use crate::runtime::paths;
 
+/// Report whether a platform code is a bounded safe uppercase path component.
 pub(crate) fn valid_platform(platform: &str) -> bool {
     !platform.is_empty() && platform.len() <= 64
-        && platform.bytes().next().is_some_and(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        && platform.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b"_-".contains(&b))
+        && platform.bytes().next().is_some_and(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        && platform.bytes().all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || b"_-".contains(&byte))
 }
 
 fn open_directory(parent: &File, name: &CStr) -> io::Result<File> {
@@ -49,8 +50,8 @@ pub fn directory(root: &Path, platform: &str) -> io::Result<Option<PathBuf>> {
         };
         match selected() {
             Ok(_) => Ok(Some(path)),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e),
+            Err(error_item) if error_item.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error_item) => Err(error_item),
         }
     };
     check().map_err(|error| io::Error::new(error.kind(),

@@ -32,8 +32,8 @@ fn drm_selection_and_input_paths_are_explicit_and_cwd_independent() {
     assert_eq!(profile.runtime_dir(), Path::new("/run/user/1000"));
     assert!(args
         .windows(2)
-        .any(|v| v == ["--drm-device", "/dev/dri/card2"]));
-    assert!(args.windows(2).any(|v| v == ["--drm-connector", "91"]));
+        .any(|value_item| value_item == ["--drm-device", "/dev/dri/card2"]));
+    assert!(args.windows(2).any(|value_item| value_item == ["--drm-connector", "91"]));
     assert!(args.contains(&dir.path().join("pads/hid.json").into_os_string()));
     assert!(args.contains(&"/opt/evdev.json".into()));
     assert!(!args.contains(&"--frames".into()));
@@ -231,7 +231,7 @@ fn mismatched_drm_game_context_is_rejected_before_opening_a_device() {
     let result = display::open(&settings, Some(Some("x")));
     let error = match result {
         Ok(_) => panic!("invalid context accepted"),
-        Err(e) => e,
+        Err(error_item) => error_item,
     };
     #[cfg(feature = "drm")]
     assert!(error.to_string().contains("kms context"));

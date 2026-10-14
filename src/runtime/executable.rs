@@ -18,7 +18,7 @@ pub fn supervise(
     observer: &mut dyn FnMut(&'static str),
 ) -> io::Result<ExitStatus> {
     observer("gui_start");
-    let (mut child, mut log) = spawn_pinned(app, arguments.iter().map(|s| (*s).to_owned()).collect(), None)?;
+    let (mut child, mut log) = spawn_pinned(app, arguments.iter().map(|argument| (*argument).to_owned()).collect(), None)?;
     log.observe(child.0.id(), Some(std::time::Instant::now()), "supervisor");
     crate::session::diagnostic(format_args!("iman: IGUI child pid={}", child.0.id()));
     let result = session::wait(&mut child.0, &mut |phase| {
@@ -58,14 +58,14 @@ fn spawn_pinned(
             CString::new(item)
         }).collect::<Result<Vec<_>, _>>()?
     } else { Vec::new() };
-    let mut argv = arguments.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
+    let mut argv = arguments.iter().map(|argument| argument.as_ptr()).collect::<Vec<_>>();
     argv.push(std::ptr::null());
-    let mut envp = environment.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
+    let mut envp = environment.iter().map(|argument| argument.as_ptr()).collect::<Vec<_>>();
     envp.push(std::ptr::null());
     // Pointer arrays are prepared before fork. Capture their addresses as usize;
     // the owned backing strings remain in the Command closure until exec/drop.
-    let argv = argv.into_iter().map(|p| p as usize).collect::<Vec<_>>();
-    let envp = envp.into_iter().map(|p| p as usize).collect::<Vec<_>>();
+    let argv = argv.into_iter().map(|pointer| pointer as usize).collect::<Vec<_>>();
+    let envp = envp.into_iter().map(|pointer| pointer as usize).collect::<Vec<_>>();
     let mut command = Command::new("/no-path-fallback-for-pinned-igui");
     command.env_clear().stdin(Stdio::null()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
     if let Some(cwd) = cwd { command.current_dir(cwd); }
@@ -118,6 +118,7 @@ pub fn supervise_session(
     Ok(())
 }
 
+/// Build a child command that executes the held GUI FD without reopening an untrusted path.
 pub(crate) fn pinned_gui(
     app: std::os::fd::OwnedFd,
     arguments: Vec<std::ffi::CString>,

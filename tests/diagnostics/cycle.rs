@@ -69,7 +69,7 @@ fn failed_writer_retains_one_snapshot_and_never_retries_or_accumulates_segments(
 
     session.start(bundle, 5).unwrap();
     wait(&mut session, 10);
-    for i in 0..100 { session.begin_next(20 + i); session.phase(20 + i, "game"); }
+    for index in 0..100 { session.begin_next(20 + index); session.phase(20 + index, "game"); }
 
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(session.saved, 0);
@@ -84,7 +84,7 @@ fn failed_writer_retains_one_snapshot_and_never_retries_or_accumulates_segments(
 #[test]
 fn phase_history_eviction_preserves_durations_and_a_fixed_vocabulary() {
     let mut session = Session::new("phases".into(), Arc::new(|_, _| unreachable!()), 0);
-    for i in 0..200 { session.phase(i, if i % 2 == 0 {"gui"} else {"game"}); }
+    for index in 0..200 { session.phase(index, if index % 2 == 0 {"gui"} else {"game"}); }
     let bundle = freeze(&mut session, 200);
 
     let segment = &bundle.metadata["segment"];

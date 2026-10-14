@@ -75,6 +75,7 @@ impl Segment {
         }
     }
 
+    /// Accumulate elapsed time for a bounded session-phase name in this segment.
     pub fn phase(&mut self, ms: u64, phase: &str) {
         // Fixed vocabulary prevents per-cycle IDs from making the map unbounded.
         let phase = if ["initializing", "session_start", "starting_gui", "gui_start", "gui",
@@ -117,6 +118,7 @@ pub struct Session {
 }
 
 impl Session {
+    /// Create a diagnostic cycle with one active segment and the supplied export writer.
     pub fn new(id: String, writer: Writer, ms: u64) -> Self {
         Self {
             id, active: Some(Segment::new(1, ms)), previous_export: None,
@@ -125,12 +127,14 @@ impl Session {
         }
     }
 
+    /// Update the active segment's phase and elapsed time.
     pub fn phase(&mut self, ms: u64, phase: &str) {
         if let Some(segment) = &mut self.active {
             segment.phase(ms, phase);
         }
     }
 
+    /// Start the next segment only after the previous export completed successfully.
     pub fn begin_next(&mut self, ms: u64) {
         if self.error.is_none() && self.pending.is_none() && self.active.is_none() {
             self.active = Some(Segment::new(self.next, ms));
@@ -140,6 +144,7 @@ impl Session {
         }
     }
 
+    /// Close the active segment and return its export snapshot with any operation error.
     pub fn freeze(&mut self, ms: u64, error: Option<&str>) -> Option<Bundle> {
         let mut segment = self.active.take()?;
         segment.phase(ms, &segment.phase.clone());
@@ -150,7 +155,7 @@ impl Session {
             "session_id": self.id, "clock":"iman_session", "clock_unit":"milliseconds",
             "clock_origin":"manager_control_created", "clock_kind":"monotonic", "manager_version":env!("CARGO_PKG_VERSION"), "manager_build_utc":env!("IMAN_BUILD_UTC"),
             "architecture":std::env::consts::ARCH, "compiled_modules":compiled_modules(), "segment":segment,
-            "session_error":error.map(|s| s.chars().take(2048).collect::<String>()),
+            "session_error":error.map(|segment_item| segment_item.chars().take(2048).collect::<String>()),
             "previous_export":self.previous_export, "saved_segments_before":self.saved,
             "exported_file_bytes_before":self.exported_bytes,
             "cutoff":"before this export and final display restoration",
@@ -205,6 +210,7 @@ impl Session {
         self.failed = Some(bundle);
     }
 
+    /// Report whether a diagnostic export worker is still owned by this cycle.
     pub fn pending(&self) -> bool { self.pending.is_some() }
 
     /// Never blocks the sampler. Returns true exactly once for a completed worker.
@@ -226,8 +232,10 @@ impl Session {
         true
     }
 
+    /// Borrow the retained snapshot from a failed export, if one exists.
     pub fn failed_snapshot(&self) -> Option<&Bundle> { self.failed.as_deref() }
 
+    /// Return bounded export state, counters and the last confirmed export path.
     pub fn status(&self) -> Value {
         json!({
             "policy":"automatic_segments", "session_id":self.id,
@@ -238,6 +246,7 @@ impl Session {
         })
     }
 
+    /// Stop future segments and exports, retaining the first failure reason.
     pub fn disable(&mut self, error: &str) {
         self.error.get_or_insert_with(|| error.chars().take(2048).collect());
         self.active = None;

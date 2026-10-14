@@ -52,16 +52,16 @@ pub struct Mount {
 fn unescape_mount(value: &str) -> io::Result<String> {
     let bytes = value.as_bytes();
     let mut out = Vec::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' {
-            let escape = bytes.get(i + 1..i + 4).ok_or_else(|| io::Error::other("invalid mount escape"))?;
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if bytes[offset] == b'\\' {
+            let escape = bytes.get(offset + 1..offset + 4).ok_or_else(|| io::Error::other("invalid mount escape"))?;
             out.push(match escape {
                 b"040" => b' ', b"011" => b'\t', b"012" => b'\n', b"134" => b'\\',
                 _ => return Err(io::Error::other("invalid mount escape")),
             });
-            i += 4;
-        } else { out.push(bytes[i]); i += 1; }
+            offset += 4;
+        } else { out.push(bytes[offset]); offset += 1; }
     }
     String::from_utf8(out).map_err(io::Error::other)
 }
@@ -81,10 +81,10 @@ pub fn parse_mountinfo(text: &str, root: &Path, device: u64) -> io::Result<Mount
         if fields[2] != expected { continue; }
         let mount_point = unescape_mount(fields[4])?;
         if !root.starts_with(&mount_point) { continue; }
-        if [mount_point.as_str(), fields[5], tail[0], tail[2]].iter().any(|s| s.len() > 1024) {
+        if [mount_point.as_str(), fields[5], tail[0], tail[2]].iter().any(|sample_item| sample_item.len() > 1024) {
             return Err(io::Error::other("mount context exceeds limit"));
         }
-        let length = selected.as_ref().map_or(0, |m| m.mount_point.len());
+        let length = selected.as_ref().map_or(0, |mount_item| mount_item.mount_point.len());
         if mount_point.len() > length {
             selected = Some(Mount { device: expected.clone(), mount_point, filesystem: tail[0].into(),
                 mount_options: fields[5].into(), super_options: tail[2].into() });
@@ -127,7 +127,9 @@ pub struct Source {
 impl Source {
     /// Dependency injection is for offline fixtures, not a production path override.
     pub fn new(proc_root: PathBuf, application_root: PathBuf) -> Self { Self { proc_root, application_root } }
+    /// Create a procfs source for the supplied application root without reading it yet.
     pub fn system(root: &Path) -> Self { Self::new("/proc".into(), root.into()) }
+    /// Read bounded mount and application-filesystem context at the supplied session time.
     pub fn environment(&self, ms: u64) -> Environment {
         let mount = (|| {
             let root = self.application_root.canonicalize()?;
@@ -143,11 +145,12 @@ impl Source {
         let writeback = ["dirty_background_bytes", "dirty_background_ratio", "dirty_bytes", "dirty_ratio",
             "dirty_expire_centisecs", "dirty_writeback_centisecs"].into_iter().map(|name| {
             let value = read_text(&self.proc_root.join("sys/vm").join(name), 32)
-                .and_then(|s| s.trim().parse::<u64>().map_err(io::Error::other));
+                .and_then(|sample_item| sample_item.trim().parse::<u64>().map_err(io::Error::other));
             (name, value.into())
         }).collect();
         Environment { ms, mount, writeback }
     }
+    /// Read bounded process I/O and memory context for the current manager and optional child.
     pub fn sample(&self, ms: u64, phase: &str, manager: u32, child: Option<u32>) -> Sample {
         let process = |pid| read_process_with(pid, |name| read_text(&self.proc_root.join(pid.to_string()).join(name),
             if name == "stat" { STAT_LIMIT } else { PROC_IO_LIMIT })).into();
@@ -184,18 +187,22 @@ pub struct Monitor {
     next_ms: u64,
 }
 impl Monitor {
+    /// Create an empty context monitor with the supplied source, without sampling it.
     pub fn new(source: Source) -> Self {
         Self { source, last_ms: None, next_ms: 0, report: Report { version: 1, clock: "iman_session",
             scope: "session", interval_ms: INTERVAL_MS, environment: None, samples: 0, read_errors: 0,
             history_dropped: 0, sample_us_sum: 0, sample_us_max: 0, stopped: false, error: None,
             history: VecDeque::new() } }
     }
+    /// Borrow the bounded context observation report.
     pub fn report(&self) -> &Report { &self.report }
+    /// Permanently stop further context sampling.
     pub fn stop(&mut self) { self.report.stopped = true; }
+    /// Take a context sample when due, rejecting invalid phase names or backwards timestamps.
     pub fn poll(&mut self, ms: u64, phase: &str, manager: u32, child: Option<u32>) {
         if self.report.stopped { return; }
         if self.last_ms.is_some_and(|last| ms < last) || phase.is_empty() || phase.len() > 32
-            || !phase.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            || !phase.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
             || manager == 0 || child.is_some_and(|pid| pid == 0 || pid == manager)
         {
             self.report.error = Some("invalid I/O context clock, phase or process".into());
@@ -209,20 +216,21 @@ impl Monitor {
         if self.report.environment.is_none() {
             let environment = self.source.environment(ms);
             self.report.read_errors += u64::from(environment.mount.error.is_some())
-                + environment.writeback.values().filter(|v| v.error.is_some()).count() as u64;
+                + environment.writeback.values().filter(|value_item| value_item.error.is_some()).count() as u64;
             self.report.environment = Some(environment);
         }
         let sample = self.source.sample(ms, phase, manager, child);
-        let r = &mut self.report;
-        r.read_errors += u64::from(sample.memory.error.is_some()) + u64::from(sample.manager.error.is_some())
-            + u64::from(sample.child.as_ref().is_some_and(|s| s.error.is_some()));
-        r.samples += 1;
-        if r.history.len() == HISTORY_LIMIT { r.history.pop_front(); r.history_dropped += 1; }
-        r.history.push_back(sample);
+        let report_item = &mut self.report;
+        report_item.read_errors += u64::from(sample.memory.error.is_some()) + u64::from(sample.manager.error.is_some())
+            + u64::from(sample.child.as_ref().is_some_and(|sample_item| sample_item.error.is_some()));
+        report_item.samples += 1;
+        if report_item.history.len() == HISTORY_LIMIT { report_item.history.pop_front(); report_item.history_dropped += 1; }
+        report_item.history.push_back(sample);
         let us = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
-        r.sample_us_sum = r.sample_us_sum.saturating_add(us);
-        r.sample_us_max = r.sample_us_max.max(us);
+        report_item.sample_us_sum = report_item.sample_us_sum.saturating_add(us);
+        report_item.sample_us_max = report_item.sample_us_max.max(us);
     }
+    /// Encode the context report within its byte budget, dropping oldest history when needed.
     pub fn report_json(&self) -> io::Result<String> {
         let mut report = self.report.clone();
         loop {

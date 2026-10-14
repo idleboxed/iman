@@ -83,9 +83,11 @@ impl Source {
     pub fn new(proc_root: PathBuf) -> Self {
         Self { proc_root }
     }
+    /// Create a procfs memory source without reading it during construction.
     pub fn system() -> Self {
         Self::new("/proc".into())
     }
+    /// Read bounded memory information for one checked process identity.
     pub fn process(&self, pid: u32) -> io::Result<ProcessMemory> {
         let root = self.proc_root.join(pid.to_string());
         read_process_with(pid, |name| {
@@ -99,8 +101,9 @@ impl Source {
             )
         })
     }
+    /// Read system, manager and optional child memory, rejecting invalid target PIDs.
     pub fn sample(&self, manager: u32, child: Option<u32>) -> io::Result<Snapshot> {
-        if manager == 0 || child.is_some_and(|p| p == 0 || p == manager) {
+        if manager == 0 || child.is_some_and(|part| part == 0 || part == manager) {
             return Err(io::Error::other("invalid memory observation targets"));
         }
         let process = |pid| ProcessSample {
@@ -190,9 +193,11 @@ impl Default for Monitor {
     }
 }
 impl Monitor {
+    /// Borrow retained bounded memory observations and maxima.
     pub fn report(&self) -> &Report {
         &self.report
     }
+    /// Stop further memory sampling.
     pub fn stop(&mut self) {
         self.report.stopped = true;
     }
@@ -206,7 +211,7 @@ impl Monitor {
             || phase.is_empty()
             || !phase
                 .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                .all(|character| character.is_ascii_alphanumeric() || character == b'_')
         {
             self.report.error = Some("invalid memory sample clock or phase".into());
             self.stop();
@@ -219,49 +224,49 @@ impl Monitor {
         self.next_ms = ms.saturating_add(INTERVAL_MS);
         let started = Instant::now();
         let reading: Reading<Snapshot> = read().into();
-        let r = &mut self.report;
-        r.read_errors += u64::from(reading.error.is_some());
+        let report_item = &mut self.report;
+        report_item.read_errors += u64::from(reading.error.is_some());
         if let Some(snapshot) = &reading.value {
-            r.read_errors += u64::from(snapshot.system.error.is_some())
+            report_item.read_errors += u64::from(snapshot.system.error.is_some())
                 + u64::from(snapshot.manager.reading.error.is_some())
                 + u64::from(
                     snapshot
                         .child
                         .as_ref()
-                        .is_some_and(|p| p.reading.error.is_some()),
+                        .is_some_and(|part| part.reading.error.is_some()),
                 );
             if let Some(info) = snapshot.system.value {
-                r.available_min_bytes = Some(
-                    r.available_min_bytes
-                        .map_or(info.available_bytes, |n| n.min(info.available_bytes)),
+                report_item.available_min_bytes = Some(
+                    report_item.available_min_bytes
+                        .map_or(info.available_bytes, |number| number.min(info.available_bytes)),
                 );
             }
             if let Some(memory) = &snapshot.manager.reading.value {
-                r.manager_rss_max_bytes =
-                    Some(r.manager_rss_max_bytes.unwrap_or(0).max(memory.rss_bytes));
+                report_item.manager_rss_max_bytes =
+                    Some(report_item.manager_rss_max_bytes.unwrap_or(0).max(memory.rss_bytes));
             }
             if let Some(memory) = snapshot
                 .child
                 .as_ref()
-                .and_then(|p| p.reading.value.as_ref())
+                .and_then(|part| part.reading.value.as_ref())
             {
-                r.child_rss_max_bytes =
-                    Some(r.child_rss_max_bytes.unwrap_or(0).max(memory.rss_bytes));
+                report_item.child_rss_max_bytes =
+                    Some(report_item.child_rss_max_bytes.unwrap_or(0).max(memory.rss_bytes));
             }
         }
-        if r.history.len() == HISTORY_LIMIT {
-            r.history.pop_front();
-            r.history_dropped += 1;
+        if report_item.history.len() == HISTORY_LIMIT {
+            report_item.history.pop_front();
+            report_item.history_dropped += 1;
         }
-        r.history.push_back(Sample {
+        report_item.history.push_back(Sample {
             ms,
             phase: phase.into(),
             reading,
         });
-        r.samples += 1;
+        report_item.samples += 1;
         let us = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
-        r.sample_us_sum = r.sample_us_sum.saturating_add(us);
-        r.sample_us_max = r.sample_us_max.max(us);
+        report_item.sample_us_sum = report_item.sample_us_sum.saturating_add(us);
+        report_item.sample_us_max = report_item.sample_us_max.max(us);
     }
     /// Trim a serialized copy, retaining peaks and the live in-RAM history.
     pub fn report_json(&self) -> io::Result<String> {

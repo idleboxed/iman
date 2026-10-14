@@ -279,7 +279,7 @@ fn diagnostic_screen_failure_restores_without_countdown_or_retry() {
     ).unwrap_err();
 
     assert!(error.to_string().contains("synthetic missing GUI; diagnostic screen: diagnostics"));
-    assert!(!screen.events.iter().any(|e| e.starts_with("tick:")));
+    assert!(!screen.events.iter().any(|error_item| error_item.starts_with("tick:")));
     assert_eq!(screen.events.last().unwrap(), "finish");
 }
 

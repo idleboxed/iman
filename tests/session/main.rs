@@ -138,7 +138,7 @@ fn gui_exits_before_game_and_returns_with_state() {
     assert_eq!(
         events
             .iter()
-            .map(|e| e["event"].as_str().unwrap())
+            .map(|error_item| error_item["event"].as_str().unwrap())
             .collect::<Vec<_>>(),
         ["gui", "game", "gui"]
     );
@@ -238,7 +238,7 @@ fn observation_hooks_follow_gui_game_gui_without_changing_session_behavior() {
 
     let transitions: Vec<_> = phases
         .into_iter()
-        .filter(|p| p.ends_with("_start") || p.ends_with("_exit"))
+        .filter(|phase_item| phase_item.ends_with("_start") || phase_item.ends_with("_exit"))
         .collect();
     assert_eq!(
         transitions,
@@ -330,13 +330,13 @@ fn application_startup_uses_compiled_collectors_regardless_of_unknown_arguments(
                 .map(|entry| entry.unwrap().path()).collect::<Vec<_>>();
             entries.sort();
             assert_eq!(entries.len(), 2);
-            for (i, entry) in entries.iter().enumerate() {
+            for (index, entry) in entries.iter().enumerate() {
                 let manifest: Value = serde_json::from_slice(&fs::read(entry.join("report.json")).unwrap()).unwrap();
                 assert_eq!(manifest["metadata"]["compiled_modules"], json!(iman::diagnostics::cycle::compiled_modules()));
-                assert_eq!(manifest["metadata"]["segment"]["sequence"], i + 1);
+                assert_eq!(manifest["metadata"]["segment"]["sequence"], index + 1);
                 for (file, compiled) in [
                     ("observation.json", cfg!(feature = "io-monitor")),
-                    ("diag_perf.json", cfg!(feature = "diag-perf") && i == 0),
+                    ("diag_perf.json", cfg!(feature = "diag-perf") && index == 0),
                     ("diag_memory.json", cfg!(feature = "diag-memory")),
                     ("diag_klog.json", cfg!(feature = "diag-klog")),
                     ("diag_display.json", cfg!(feature = "diag-display")),
@@ -646,15 +646,15 @@ fn diagnostic_log_limit_does_not_cap_game_files_or_expand_parent_logs() {
             assert!(log.contains("fixture stdout"));
             assert!(log.contains("fixture stderr"));
             assert!(log.contains("RetroArch output end"));
-            let metrics = log.lines().find_map(|s| s.strip_prefix("IMAN perf: "));
+            let metrics = log.lines().find_map(|script| script.strip_prefix("IMAN perf: "));
             assert_eq!(metrics.is_some(), cfg!(feature = "diag-perf"));
             if let Some(json) = metrics {
                 assert!(json.len() <= 4096);
-                let r: Value = serde_json::from_str(json).unwrap();
-                assert_eq!(r["finished"], true);
-                assert!(r["error"].is_null(), "{r}");
-                assert!(r["samples"].as_u64().unwrap() >= 1);
-                assert!(r["clock_ticks_per_second"].as_u64().unwrap() > 0);
+                let request: Value = serde_json::from_str(json).unwrap();
+                assert_eq!(request["finished"], true);
+                assert!(request["error"].is_null(), "{request}");
+                assert!(request["samples"].as_u64().unwrap() >= 1);
+                assert!(request["clock_ticks_per_second"].as_u64().unwrap() > 0);
             }
             for (name, compiled, limit) in [
                 ("diag_memory", cfg!(feature = "diag-memory"), 8192),
@@ -665,7 +665,7 @@ fn diagnostic_log_limit_does_not_cap_game_files_or_expand_parent_logs() {
                 let prefix = format!("IMAN {name}: ");
                 let lines: Vec<_> = log
                     .lines()
-                    .filter_map(|s| s.strip_prefix(&prefix))
+                    .filter_map(|script| script.strip_prefix(&prefix))
                     .collect();
                 assert_eq!(lines.len(), usize::from(compiled));
                 if let Some(text) = lines.first() {
@@ -840,22 +840,22 @@ fn automatic_segments_cover_repeated_games_and_tail_before_display_release() {
 
         let events = events.lock().unwrap();
         assert_eq!(events.last().map(String::as_str), Some("finish"));
-        assert_eq!(events.iter().filter(|e| e.as_str() == "write").count(),
+        assert_eq!(events.iter().filter(|error_item| error_item.as_str() == "write").count(),
             if mode == "write-error" || mode == "gui-only" {1} else {3});
         if mode == "write-error" {
-            assert!(!events.iter().any(|e| e == "Diagnostics synchronized."));
+            assert!(!events.iter().any(|error_item| error_item == "Diagnostics synchronized."));
             assert_eq!(control.cycle_status()["failed_snapshot_retained"], true);
             continue;
         }
         let mut directories = fs::read_dir(reports.path().join("iman-reports")).unwrap()
-            .map(|e| e.unwrap().path()).collect::<Vec<_>>();
+            .map(|error_item| error_item.unwrap().path()).collect::<Vec<_>>();
         directories.sort();
-        for (i, directory) in directories.iter().enumerate() {
+        for (index, directory) in directories.iter().enumerate() {
             let manifest: Value = serde_json::from_slice(&fs::read(directory.join("report.json")).unwrap()).unwrap();
             let metadata = &manifest["metadata"];
-            assert_eq!(metadata["segment"]["sequence"], i + 1);
-            assert_eq!(metadata["previous_export"].is_null(), i == 0);
-            let tail = i + 1 == directories.len();
+            assert_eq!(metadata["segment"]["sequence"], index + 1);
+            assert_eq!(metadata["previous_export"].is_null(), index == 0);
+            let tail = index + 1 == directories.len();
             assert_eq!(metadata["segment"]["game"].is_null(), tail);
             for (name, compiled) in [
                 ("diag_memory.json", cfg!(feature = "diag-memory")),

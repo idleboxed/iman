@@ -43,15 +43,18 @@ pub struct Source {
     cpu_root: PathBuf,
 }
 impl Source {
+    /// Create a source with supplied procfs and CPU roots; construction performs no I/O.
     pub fn new(proc_root: PathBuf, cpu_root: PathBuf) -> Self {
         Self {
             proc_root,
             cpu_root,
         }
     }
+    /// Select the normal Linux procfs and CPU roots without reading them.
     pub fn system() -> Self {
         Self::new("/proc".into(), "/sys/devices/system/cpu".into())
     }
+    /// Read bounded process, thread and available CPU-frequency information for one stable PID.
     pub fn sample(&self, pid: u32) -> io::Result<Snapshot> {
         if pid == 0 {
             return Err(io::Error::other("invalid process id"));
@@ -69,14 +72,14 @@ impl Source {
                 &root.join("task").join(tid.to_string()).join("stat"),
                 STAT_LIMIT,
             )
-            .and_then(|s| parse_stat(&s))
+            .and_then(|sample_item| parse_stat(&sample_item))
             {
                 Ok(task) if task.id == tid => threads.push(task),
                 _ => read_errors += 1, // A thread can exit between enumeration and read.
             }
         }
         let (cpus, cpus_limited) = match ids(&self.cpu_root, "cpu", CPU_LIMIT) {
-            Ok(v) => v,
+            Ok(value) => value,
             Err(_) => {
                 read_errors += 1;
                 (Vec::new(), false)
@@ -86,9 +89,9 @@ impl Source {
         for cpu in cpus {
             let root = self.cpu_root.join(format!("cpu{cpu}/cpufreq"));
             let mut khz = |name| match read_text(&root.join(name), STAT_LIMIT)
-                .and_then(|s| s.trim().parse::<u64>().map_err(io::Error::other))
+                .and_then(|sample_item| sample_item.trim().parse::<u64>().map_err(io::Error::other))
             {
-                Ok(n) if n > 0 => Some(n),
+                Ok(number) if number > 0 => Some(number),
                 _ => {
                     read_errors += 1;
                     None
@@ -118,17 +121,17 @@ impl Source {
 fn ids(path: &Path, prefix: &str, limit: usize) -> io::Result<(Vec<u32>, bool)> {
     let mut ids = Vec::new();
     let mut limited = false;
-    for (i, entry) in path.read_dir()?.enumerate() {
-        if i == ENUM_LIMIT {
+    for (index_item, entry) in path.read_dir()?.enumerate() {
+        if index_item == ENUM_LIMIT {
             limited = true;
             break;
         }
         let name = entry?.file_name();
         if let Some(id) = name
             .to_str()
-            .and_then(|s| s.strip_prefix(prefix))
-            .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
-            .and_then(|s| s.parse::<u32>().ok())
+            .and_then(|sample_item| sample_item.strip_prefix(prefix))
+            .filter(|sample_item| !sample_item.is_empty() && sample_item.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|sample_item| sample_item.parse::<u32>().ok())
         {
             ids.push(id);
         }
@@ -217,6 +220,7 @@ impl Monitor {
             next_ms: 0,
         })
     }
+    /// Borrow retained performance observations and derived counters.
     pub fn report(&self) -> &Report {
         &self.report
     }
@@ -227,8 +231,8 @@ impl Monitor {
         }
         self.next_ms = ms.saturating_add(INTERVAL_MS);
         let started = Instant::now();
-        if let Err(e) = sample().and_then(|s| self.record(ms, s)) {
-            self.report.error = Some(e.to_string().chars().take(120).collect());
+        if let Err(error_item) = sample().and_then(|sample_item| self.record(ms, sample_item)) {
+            self.report.error = Some(error_item.to_string().chars().take(120).collect());
         }
         let us = started.elapsed().as_micros();
         self.report.sample_us_sum += us;
@@ -249,7 +253,7 @@ impl Monitor {
             || threads
                 .iter()
                 .enumerate()
-                .any(|(i, t)| t.id == 0 || threads[..i].iter().any(|p| p.id == t.id))
+                .any(|(index_item, task_item)| task_item.id == 0 || threads[..index_item].iter().any(|part| part.id == task_item.id))
         {
             return Err(io::Error::other("invalid CPU snapshot"));
         }
@@ -260,7 +264,7 @@ impl Monitor {
                 }
                 let dt = ms
                     .checked_sub(*previous_ms)
-                    .filter(|v| *v > 0)
+                    .filter(|value| *value > 0)
                     .ok_or_else(|| io::Error::other("invalid sample time"))?;
                 let ticks = process
                     .cpu_ticks
@@ -270,20 +274,20 @@ impl Monitor {
             }
             None => (0, None),
         };
-        let r = &mut self.report;
-        r.threads_limited |= threads_limited;
-        r.cpus_limited |= cpus_limited;
-        r.read_errors += u64::from(read_errors);
-        let mut deltas = vec![None; r.threads.len()];
+        let report_item = &mut self.report;
+        report_item.threads_limited |= threads_limited;
+        report_item.cpus_limited |= cpus_limited;
+        report_item.read_errors += u64::from(read_errors);
+        let mut deltas = vec![None; report_item.threads.len()];
         for task in threads {
-            let index = match r
+            let index = match report_item
                 .threads
                 .iter()
-                .position(|t| (t.tid, t.start_ticks) == (task.id, task.start_ticks))
+                .position(|task_item| (task_item.tid, task_item.start_ticks) == (task.id, task.start_ticks))
             {
-                Some(i) => i,
-                None if r.threads.len() < THREAD_LIMIT => {
-                    r.threads.push(ThreadTotal {
+                Some(index_item) => index_item,
+                None if report_item.threads.len() < THREAD_LIMIT => {
+                    report_item.threads.push(ThreadTotal {
                         tid: task.id,
                         start_ticks: task.start_ticks,
                         name: task.name.chars().take(16).collect(),
@@ -294,50 +298,50 @@ impl Monitor {
                     });
                     deltas.push(None);
                     // Keep history columns aligned when a worker appears later.
-                    for old_sample in &mut r.history {
+                    for old_sample in &mut report_item.history {
                         old_sample.thread_ticks.push(None);
                     }
-                    r.threads.len() - 1
+                    report_item.threads.len() - 1
                 }
                 None => {
-                    r.threads_limited = true;
+                    report_item.threads_limited = true;
                     continue;
                 }
             };
-            let total = &mut r.threads[index];
+            let total = &mut report_item.threads[index];
             // pthread names can change after creation; identity is TID/starttime.
             total.name = task.name.chars().take(16).collect();
             if let Some((ticks, when)) = total.previous {
-                if Some(when) == self.previous.as_ref().map(|(_, t)| *t) {
+                if Some(when) == self.previous.as_ref().map(|(_, task_item)| *task_item) {
                     if let Some(delta) = task.cpu_ticks.checked_sub(ticks) {
                         total.cpu_ticks = total.cpu_ticks.saturating_add(delta);
                         total.observed_ms = total.observed_ms.saturating_add(dt_ms);
                         let busy = u128::from(delta) * 1_000_000
-                            / (u128::from(r.clock_ticks_per_second) * u128::from(dt_ms));
+                            / (u128::from(report_item.clock_ticks_per_second) * u128::from(dt_ms));
                         total.max_busy_permille = total
                             .max_busy_permille
                             .max(busy.min(u128::from(u64::MAX)) as u64);
                         deltas[index] = Some(delta);
                     } else {
-                        r.read_errors += 1;
+                        report_item.read_errors += 1;
                     }
                 }
             }
             total.previous = Some((task.cpu_ticks, ms));
         }
-        if r.history.len() == HISTORY_LIMIT {
-            r.history.pop_front();
-            r.history_dropped += 1;
+        if report_item.history.len() == HISTORY_LIMIT {
+            report_item.history.pop_front();
+            report_item.history_dropped += 1;
         }
-        r.history.push_back(Sample {
+        report_item.history.push_back(Sample {
             ms,
             dt_ms,
             process_ticks,
             thread_ticks: deltas,
             frequencies,
         });
-        r.elapsed_ms = ms;
-        r.samples += 1;
+        report_item.elapsed_ms = ms;
+        report_item.samples += 1;
         self.previous = Some((process, ms));
         Ok(())
     }

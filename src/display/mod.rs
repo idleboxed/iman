@@ -37,17 +37,22 @@ pub trait Lease {
     fn poll_events(&mut self) -> io::Result<()> {
         Ok(())
     }
+    /// Enable or disable manager-owned display timing observation.
     fn observe_display(&mut self, _enabled: bool) {}
+    /// Take the completed display observation, if this backend collected one.
     fn take_diagnostics(&mut self) -> Option<(Duration, imanlib::display_metrics::Sample)> {
         None
     }
+    /// Return an available display-observation status line.
     fn diagnostics_status(&self) -> Option<String> {
         None
     }
+    /// Prepare the manager-owned display for the next GUI startup.
     fn starting_gui(&mut self) -> io::Result<()> {
         Ok(())
     }
     #[cfg(feature = "diag-input")]
+    /// Present a changed controller-test view; return whether the display actually changed.
     fn input_test_frame(&mut self, _view: &crate::input_test::View) -> io::Result<bool> {
         Ok(false)
     }
@@ -55,11 +60,15 @@ pub trait Lease {
     fn departure(&mut self, _message: &str) -> io::Result<bool> {
         Ok(false)
     }
+    /// Present the path only after the report export confirmed successful publication.
     fn report_saved(&mut self, path: &Path) -> io::Result<bool> {
         self.export_status(&format!("Report saved: {}", path.display()), false)
     }
+    /// Yield display ownership before starting a child process.
     fn lend(&mut self) -> io::Result<()>;
+    /// Verify and recover display ownership only after the child has been reaped.
     fn reclaim(&mut self) -> io::Result<()>;
+    /// Restore and release display resources, returning cleanup failures explicitly.
     fn finish(&mut self) -> io::Result<()>;
     /// Called only after the failed GUI has been reaped and ownership verified.
     /// True permits the departure countdown after any requested diagnostics.
@@ -78,11 +87,13 @@ pub trait Lease {
     fn export_status(&mut self, _message: &str, _failed: bool) -> io::Result<bool> {
         Ok(false)
     }
+    /// Return the manager display's optional monitor identifier.
     fn monitor_index(&self) -> Option<u32> {
         None
     }
 }
 
+/// Format a GUI failure and executable path without display or terminal control injection.
 pub fn gui_error_message(path: &Path, error: &io::Error) -> String {
     // Neither a filename nor a child error may inject display/terminal controls.
     format!("IGUI failed: {}. Executable: {}",

@@ -52,10 +52,12 @@ pub struct Bundle {
 }
 
 impl Bundle {
+    /// Create an in-memory report bundle with supplied session metadata.
     pub fn new(metadata: Value) -> Self {
         Self { metadata, files: BTreeMap::new() }
     }
 
+    /// Add newline-terminated JSON bytes under the requested report filename.
     pub fn json(&mut self, name: &str, value: &impl serde::Serialize) -> io::Result<()> {
         let mut bytes = serde_json::to_vec(value)?;
         bytes.push(b'\n');
@@ -97,6 +99,7 @@ impl Bundle {
         Ok(manifest)
     }
 
+    /// Return the encoded manifest plus all report payload sizes.
     pub fn byte_len(&self) -> io::Result<usize> {
         Ok(self.manifest()?.len() + self.files.values().map(Vec::len).sum::<usize>())
     }
@@ -163,7 +166,7 @@ pub fn write_bundle(card: &File, run: &str, bundle: &Bundle) -> io::Result<PathB
     if !card.metadata()?.is_dir()
         || run.is_empty()
         || run.len() > 120
-        || !run.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        || !run.bytes().all(|component| component.is_ascii_alphanumeric() || component == b'-')
     {
         return Err(io::Error::other("invalid export root or run name"));
     }

@@ -7,7 +7,9 @@ use std::{
 
 /// A monotonic clock and wait operation, replaceable together in offline tests.
 pub trait Timing {
+    /// Return elapsed monotonic time relative to this session clock.
     fn now(&self) -> Duration;
+    /// Wait for the requested duration, allowing test implementations to advance time without sleeping.
     fn wait(&mut self, duration: Duration);
 }
 

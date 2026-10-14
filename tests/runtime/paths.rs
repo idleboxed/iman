@@ -32,7 +32,7 @@ fn runtime_creation_config_and_command_share_the_same_layout() {
     assert_eq!(args[1], runtime.path().join(paths::RETROARCH_CONFIG_FILE));
     let env: BTreeMap<_, _> = command
         .get_envs()
-        .map(|(k, v)| (k.to_str().unwrap(), v.unwrap()))
+        .map(|(key, value)| (key.to_str().unwrap(), value.unwrap()))
         .collect();
     assert_eq!(
         env["XDG_CONFIG_HOME"],

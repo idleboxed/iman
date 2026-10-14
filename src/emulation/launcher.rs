@@ -137,6 +137,7 @@ fn resolve_shader_preset(root: &Path, relative: &str) -> io::Result<PathBuf> {
     check().map_err(|error| io::Error::new(error.kind(), format!("Cannot read shader preset: {relative}. {error}")))
 }
 
+/// Validate the selected ROM and installed emulator files and return a launch plan.
 pub fn resolve(root: &Path, request: &LaunchRequest) -> io::Result<LaunchPlan> {
     if !valid_hash(&request.hash) {
         return Err(io::Error::other("invalid game hash"));
@@ -213,10 +214,10 @@ fn persistent_path(
     // Check games as well as states: the nested layout must not introduce an
     // ancestor-symlink or cross-device bypass of the persistent destination.
     let held_root = crate::runtime::bundle::Root::open(root)?;
-    let held = held_root.open_directory(relative).map_err(|e| {
+    let held = held_root.open_directory(relative).map_err(|error_item| {
         io::Error::new(
-            e.kind(),
-            format!("prepare the {kind} directory {relative} on the PC: {e}"),
+            error_item.kind(),
+            format!("prepare the {kind} directory {relative} on the PC: {error_item}"),
         )
     })?;
     let anchored = PathBuf::from(format!("/proc/self/fd/{}", held.as_raw_fd()));
@@ -283,7 +284,7 @@ pub fn config(plan: &LaunchPlan, runtime: &Path) -> io::Result<String> {
         let value = path
             .to_str()
             .ok_or_else(|| io::Error::other("config path is not UTF-8"))?;
-        if value.chars().any(|c| c.is_control() || "\"\\".contains(c)) {
+        if value.chars().any(|component| component.is_control() || "\"\\".contains(component)) {
             return Err(io::Error::other(
                 "config path contains unsupported characters",
             ));
@@ -308,6 +309,7 @@ pub fn prepare_content(plan: &LaunchPlan, runtime: &Path) -> io::Result<()> {
     std::os::unix::fs::symlink(&plan.rom, content_path(plan, runtime))
 }
 
+/// Build the RetroArch command for an already prepared plan and RAM runtime directory.
 pub fn command(plan: &LaunchPlan, runtime: &Path) -> Command {
     let mut command = Command::new(&plan.retroarch);
     command

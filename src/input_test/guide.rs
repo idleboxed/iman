@@ -27,12 +27,14 @@ pub struct AxisState {
     pub tolerance: i32,
 }
 impl AxisState {
+    /// Report whether this axis is within its measured baseline tolerance.
     pub fn neutral(self) -> bool {
         (i64::from(self.value) - i64::from(self.baseline)).abs() <= i64::from(self.tolerance)
     }
 }
 pub type Axes = BTreeMap<(u32, u16), AxisState>;
 
+/// Derive a bounded neutral tolerance from the axis range, fuzz and flat values.
 pub fn axis_tolerance(info: &[i32; 6]) -> i32 {
     let range = (i64::from(info[2]) - i64::from(info[1])).abs();
     if range <= 2 { 0 } else {
@@ -55,24 +57,30 @@ pub struct TimedGuide {
 }
 
 impl TimedGuide {
+    /// Start a fresh guided control sequence at the supplied millisecond timestamp.
     pub fn begin(ms: u64) -> Self {
         Self { started_ms: ms, quiet_since: ms, ..Self::default() }
     }
 
+    /// Report whether a candidate press is waiting for all controls to be released.
     pub fn waiting_for_release(&self) -> bool { self.candidate.is_some() && !self.released }
 
+    /// Finish unobserved steps with the supplied outcome instead of inventing measurements.
     pub fn cancel_remaining(&mut self, ms: u64, outcome: &str) {
         while !self.done() { self.advance(ms, outcome, &mut Vec::new()); }
     }
 
+    /// Report whether every requested control step has an outcome.
     pub fn done(&self) -> bool {
         self.index == ACTIONS.len()
     }
 
+    /// Return the current requested physical control label, if a step remains.
     pub fn prompt(&self) -> Option<&'static str> {
         ACTIONS.get(self.index).copied()
     }
 
+    /// Discard an unconfirmed candidate and require a new released baseline.
     pub fn invalidate(&mut self) {
         self.armed = false;
         self.candidate = None;
@@ -81,6 +89,7 @@ impl TimedGuide {
         self.axis_evidence = None;
     }
 
+    /// Apply one bounded input observation and return newly completed step records.
     pub fn sample(&mut self, ms: u64, events: &[Value], ready: bool, released: bool, axes: &Axes) -> Vec<Value> {
         let mut records = Vec::new();
         let released = released && axes.values().all(|axis| axis.neutral());
@@ -121,7 +130,7 @@ impl TimedGuide {
             // key plus an analog axis. Keep the axis in the raw journal, but
             // prefer the sole key press for the guided result. Completion still
             // waits until every key and axis has returned to neutral.
-            if control.1 == 3 && (prefer_key || self.candidate.is_some_and(|c| c.1 == 1)) {
+            if control.1 == 3 && (prefer_key || self.candidate.is_some_and(|control_item| control_item.1 == 1)) {
                 continue;
             }
             let returned = match control.1 {

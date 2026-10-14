@@ -20,7 +20,7 @@ use std::{
 
 type Result<T> = std::result::Result<T, RpcError>;
 fn decode<T: DeserializeOwned>(value: Value) -> Result<T> {
-    serde_json::from_value(value).map_err(|e| RpcError::new("invalid_params", e))
+    serde_json::from_value(value).map_err(|error_item| RpcError::new("invalid_params", error_item))
 }
 #[derive(serde::Deserialize)]
 struct OperationQuery {
@@ -142,6 +142,7 @@ impl Control {
         self.launch_log = Some(log);
     }
 
+    /// Attach the checked installation root once, rejecting mismatched or replacement handles.
     pub fn attach_root(&mut self, root: crate::runtime::bundle::Root) -> io::Result<()> {
         if self.root_handle.is_some() || root.path() != self.root {
             return Err(io::Error::other("installation root is already held or mismatched"));
@@ -192,9 +193,11 @@ impl Control {
         Ok(())
     }
 
+    /// Set the explicit preference-write policy passed to GUI bootstrap.
     pub fn set_preferences_writable(&mut self, writable: bool) {
         self.bootstrap.preferences_writable = writable;
     }
+    /// Borrow the selected parent for checked RAM session resources.
     pub fn runtime_parent(&self) -> &Path {
         &self.parent
     }
@@ -212,16 +215,22 @@ impl Control {
         Ok(())
     }
     #[cfg(feature = "diag-memdump")]
+    /// Borrow the optional memory-dump monitor's preparation and capture report.
     pub fn memory_dump_report(&self) -> &crate::diagnostics::memdump::Report { self.memory_dump.report() }
     #[cfg(feature = "diag-memdump")]
+    /// Format the optional memory-dump monitor's current status.
     pub fn memory_dump_status(&self) -> String { self.memory_dump.status() }
     #[cfg(feature = "diag-memdump")]
+    /// Format the memory-read announcement that must precede capture.
     pub fn memory_dump_start_status(&self) -> String { self.memory_dump.start_status() }
     #[cfg(feature = "diag-memdump")]
+    /// Report whether an enabled, checked memory profile is ready for one attempt.
     pub fn memory_dump_ready(&self) -> bool { self.memory_dump.is_ready() }
     #[cfg(feature = "diag-memdump")]
+    /// Skip an unstarted memory dump with a bounded explanation.
     pub fn skip_memory_dump(&mut self, reason: &str) { self.memory_dump.skip(reason); }
     #[cfg(feature = "diag-memdump")]
+    /// Recheck capture prerequisites, profile identity and absence of active children or exports.
     pub fn validate_memory_dump(&mut self) {
         if self.child.is_some() || !self.cycle_enabled() || self.cycle_pending() {
             self.memory_dump.skip("child active or diagnostic export unavailable");
@@ -233,15 +242,18 @@ impl Control {
         }
     }
     #[cfg(feature = "diag-memdump")]
+    /// Attempt one validated memory capture into RAM after the caller presents its start status.
     pub fn capture_memory_dump(&mut self) {
         self.validate_memory_dump();
         let ms = self.elapsed_ms();
         self.memory_dump.capture_once(&self.parent, ms);
     }
+    /// Borrow this session's private IPC socket path.
     pub fn path(&self) -> &Path {
         self.server.path()
     }
     #[cfg(feature = "io-monitor")]
+    /// Enable write observation for explicitly selected device names.
     pub fn enable_monitor(&mut self, names: Vec<String>) {
         self.enable_monitor_with(|| Ok(names));
     }
@@ -253,20 +265,21 @@ impl Control {
     ) {
         self.monitor_requested = true;
         match devices().and_then(|names| crate::diagnostics::io::Monitor::start_at(names, &self.parent, self.started)) {
-            Ok(mut m) => {
+            Ok(mut monitor_item) => {
                 if self.cycles.is_some() {
-                    if let Err(error) = m.begin_segment("session_start") {
+                    if let Err(error) = monitor_item.begin_segment("session_start") {
                         self.monitor_error = Some(error.to_string());
                     }
                 }
-                self.monitor = Some(m);
+                self.monitor = Some(monitor_item);
             },
-            Err(e) => {
-                crate::session::diagnostic(format_args!("iman: I/O observation unavailable: {e}"));
-                self.monitor_error = Some(e.to_string());
+            Err(error_item) => {
+                crate::session::diagnostic(format_args!("iman: I/O observation unavailable: {error_item}"));
+                self.monitor_error = Some(error_item.to_string());
             }
         }
     }
+    /// Return the session start instant when diagnostic-cycle support is available.
     pub(crate) fn diagnostic_clock(&self) -> Option<Instant> {
         #[cfg(feature = "diag-cycle")]
         { return Some(self.started); }
@@ -274,6 +287,7 @@ impl Control {
         None
     }
 
+    /// Report whether the GUI has requested the enabled manager-owned controller test.
     pub fn input_test_requested(&self) -> bool {
         #[cfg(feature = "diag-input")]
         { return self.input_test_requested; }
@@ -282,17 +296,20 @@ impl Control {
     }
 
     #[cfg(feature = "diag-input")]
+    /// Consume a controller-test request only after the child is reaped and no exit is pending.
     pub fn take_input_test_request(&mut self) -> bool {
         if self.child.is_some() { return false; }
         std::mem::take(&mut self.input_test_requested) && self.exit_operation.is_none()
     }
 
     #[cfg(feature = "diag-input")]
+    /// Retain the completed manager-owned controller report.
     pub fn record_input_test(&mut self, report: Value) {
         self.input_test.complete_manager(report);
     }
 
     #[cfg(feature = "diag-input")]
+    /// Retain the completed controller report and its unapplied proposal files.
     pub fn record_input_test_completion(&mut self, completion: crate::input_test::Completion) {
         self.input_test.complete_with_proposals(completion);
     }
@@ -311,6 +328,7 @@ impl Control {
         None
     }
 
+    /// Register the new GUI PID and bootstrap state for the next menu interval.
     pub fn begin_gui(&mut self, pid: u32, state: GuiState, notice: Option<String>) {
         #[cfg(feature = "diag-input")]
         { self.input_test_requested = false; }
@@ -331,6 +349,7 @@ impl Control {
         self.bootstrap.state = state;
         self.bootstrap.notice = notice;
     }
+    /// Complete GUI bookkeeping after reaping its process and return any validated game handoff.
     pub fn end_gui(&mut self, status: ExitStatus) -> io::Result<Option<Handoff>> {
         #[cfg(feature = "diag-cycle")]
         {
@@ -381,15 +400,17 @@ impl Control {
         self.handoff = None;
         self.phase = "gui_error".into();
     }
+    /// Record the active game PID or its completed exit phase.
     pub fn set_game(&mut self, pid: Option<u32>) {
         self.child = pid;
         self.phase = if pid.is_some() { "game" } else { "game_exit" }.into();
     }
+    /// Check whether the active GUI is registered and responsive unless an orderly handoff is underway.
     pub fn gui_health(&self) -> io::Result<()> {
         if self.closed || self.handoff.is_some() || self.input_test_requested() {
             return Ok(());
         }
-        if self.gui.is_some_and(|p| !self.server.connected(p)) {
+        if self.gui.is_some_and(|peer_item| !self.server.connected(peer_item)) {
             return Err(io::Error::other(
                 "IGUI IPC disconnected without exit intent",
             ));
@@ -407,7 +428,7 @@ impl Control {
             if let Some(id) = self
                 .operations
                 .iter()
-                .find(|(_, v)| v["status"] != "pending")
+                .find(|(_, value_item)| value_item["status"] != "pending")
                 .map(|(id, _)| *id)
             {
                 self.operations.remove(&id);
@@ -419,6 +440,7 @@ impl Control {
         id
     }
 
+    /// Process bounded IPC work and diagnostic observations for the current session phase.
     pub fn poll(&mut self, phase: &str) {
         self.phase = phase.into();
         #[cfg(any(
@@ -429,13 +451,13 @@ impl Control {
         ))]
         self.diagnostics.poll(phase, std::process::id(), self.child);
         #[cfg(feature = "io-monitor")]
-        if let Some(m) = &mut self.monitor {
-            m.poll(phase);
+        if let Some(monitor_item) = &mut self.monitor {
+            monitor_item.poll(phase);
         }
         #[cfg(feature = "io-monitor")]
         {
             let ms = self.elapsed_ms();
-            if let Some(m) = &mut self.io_context { m.poll(ms, phase, std::process::id(), self.child); }
+            if let Some(monitor_item) = &mut self.io_context { monitor_item.poll(ms, phase, std::process::id(), self.child); }
         }
         #[cfg(feature = "diag-cycle")]
         if self.cycles.is_some() {
@@ -445,9 +467,9 @@ impl Control {
                 if cycles.poll(ms) {
                     if let Some(receipt) = &mut cycles.previous_export {
                         #[cfg(feature = "io-monitor")]
-                        { receipt["io"] = self.monitor.as_ref().and_then(|m| m.segment_report())
-                            .map(|r| json!({"baseline":r.baseline,"latest":r.latest,"totals":r.totals,
-                                "error":r.error,"samples_seen":r.samples_seen})).unwrap_or(Value::Null); }
+                        { receipt["io"] = self.monitor.as_ref().and_then(|monitor_item| monitor_item.segment_report())
+                            .map(|request_item| json!({"baseline":request_item.baseline,"latest":request_item.latest,"totals":request_item.totals,
+                                "error":request_item.error,"samples_seen":request_item.samples_seen})).unwrap_or(Value::Null); }
                         #[cfg(not(feature = "io-monitor"))]
                         { receipt["io"] = Value::Null; }
                     }
@@ -570,7 +592,7 @@ impl Control {
             }
             "core.status" => {
                 done(
-                    json!({"pid":std::process::id(),"phase":self.phase,"child_pid":self.child,"gui_connected":self.gui.is_some_and(|p|self.server.connected(p))}),
+                    json!({"pid":std::process::id(),"phase":self.phase,"child_pid":self.child,"gui_connected":self.gui.is_some_and(|peer_item|self.server.connected(peer_item))}),
                 )
             }
             "core.operation_status" => {
@@ -622,7 +644,7 @@ impl Control {
                 #[cfg(feature = "diag-cycle")]
                 {
                     let ms = self.elapsed_ms();
-                    if let Some(result) = self.cycle_segment().and_then(|s| s.gui_result.as_mut()) {
+                    if let Some(result) = self.cycle_segment().and_then(|sample_item| sample_item.gui_result.as_mut()) {
                         result["bootstrap_received_ms"] = json!(ms);
                     }
                 }
@@ -666,13 +688,13 @@ impl Control {
                     let game: LaunchRequest = decode(params.clone())?;
                     self.prepare_root()
                         .and_then(|_| launcher::resolve(&self.root, &game))
-                        .map_err(|e| RpcError::new("launch_refused", launcher::failure_details(&self.root, &game, e)))?;
+                        .map_err(|error_item| RpcError::new("launch_refused", launcher::failure_details(&self.root, &game, error_item)))?;
                     done(json!({"ready":true}))
                 } else {
                     let handoff: Handoff = decode(params.clone())?;
                     self.prepare_root()
                         .and_then(|_| launcher::resolve(&self.root, &handoff.game))
-                        .map_err(|e| RpcError::new("launch_refused", launcher::failure_details(&self.root, &handoff.game, e)))?;
+                        .map_err(|error_item| RpcError::new("launch_refused", launcher::failure_details(&self.root, &handoff.game, error_item)))?;
                     self.handoff = Some(handoff);
                     // Confirms only the handoff: spawning still requires successful waitpid.
                     done(json!({"handoff_received":true,"game_started":false}))
@@ -685,7 +707,7 @@ impl Control {
                     let sample: imanlib::display_metrics::Sample = decode(params.clone())?;
                     self.diagnostics
                         .submit_display(incoming.pid, sample)
-                        .map_err(|e| RpcError::new("invalid_state", e))?;
+                        .map_err(|error_item| RpcError::new("invalid_state", error_item))?;
                     done(json!({"received":true}))
                 }
                 #[cfg(not(feature = "diag-display"))]
@@ -707,7 +729,7 @@ impl Control {
                     let sample: imanlib::input_metrics::Sample = decode(params.clone())?;
                     self.diagnostics
                         .submit_input(incoming.pid, sample)
-                        .map_err(|e| RpcError::new("invalid_state", e))?;
+                        .map_err(|error_item| RpcError::new("invalid_state", error_item))?;
                     done(json!({"received":true}))
                 }
                 #[cfg(not(feature = "diag-input"))]
@@ -788,10 +810,10 @@ impl Control {
                 "I/O monitoring is not enabled",
             ));
         }
-        let report = self.monitor.as_ref().map(|m| m.report());
+        let report = self.monitor.as_ref().map(|monitor_item| monitor_item.report());
         let result = match command {
             "io_monitor.status" => {
-                json!({"state":match report {Some(r) if r.error.is_some()=>"failed",Some(r) if r.finished=>"stopped",Some(_)=>"observing",None=>"unavailable"},"elapsed_ms":report.map(|r|r.elapsed_ms),"totals":report.map(|r|&r.totals),"error":self.monitor_error.as_deref().or_else(||report.and_then(|r|r.error.as_deref()))})
+                json!({"state":match report {Some(request_item) if request_item.error.is_some()=>"failed",Some(request_item) if request_item.finished=>"stopped",Some(_)=>"observing",None=>"unavailable"},"elapsed_ms":report.map(|request_item|request_item.elapsed_ms),"totals":report.map(|request_item|&request_item.totals),"error":self.monitor_error.as_deref().or_else(||report.and_then(|request_item|request_item.error.as_deref()))})
             }
             "io_monitor.report" => {
                 json!({"observation":report,"observation_error":self.monitor_error})
@@ -806,13 +828,15 @@ impl Control {
         Ok(Outcome::Done { result })
     }
     #[cfg(feature = "io-monitor")]
+    /// Borrow write-observation data when its feature and monitor are enabled.
     pub fn observation_report(&self) -> Option<&crate::diagnostics::io::Report> {
-        self.monitor.as_ref().map(|m| m.report())
+        self.monitor.as_ref().map(|monitor_item| monitor_item.report())
     }
+    /// Finish the optional write-observation monitor.
     pub fn stop_monitor(&mut self) {
         #[cfg(feature = "io-monitor")]
-        if let Some(m) = &mut self.monitor {
-            m.finish();
+        if let Some(monitor_item) = &mut self.monitor {
+            monitor_item.finish();
         }
     }
     /// Acquire in-memory collectors for low-level library callers. The application
@@ -833,6 +857,7 @@ impl Control {
         Err(io::Error::other("this build has no diagnostic collectors"))
     }
 
+    /// Report whether enabled collectors request display observations.
     pub fn display_diagnostics_requested(&self) -> bool {
         #[cfg(feature = "diag-display")]
         return self.diagnostics.display_requested();
@@ -876,15 +901,15 @@ impl Control {
         #[cfg(feature = "io-monitor")]
         if let Some(error) = &self.monitor_error {
             lines.push(format!("I/O: unavailable ({})", error.escape_debug()));
-        } else if let Some(m) = &self.monitor {
-            let r = m.report();
-            if let Some(error) = &r.error {
+        } else if let Some(monitor_item) = &self.monitor {
+            let request_item = monitor_item.report();
+            if let Some(error) = &request_item.error {
                 lines.push(format!("I/O: failed ({})", error.escape_debug()));
-            } else if !r.finished {
-                let writes = r.baseline.iter().zip(&r.totals)
+            } else if !request_item.finished {
+                let writes = request_item.baseline.iter().zip(&request_item.totals)
                     .map(|(device, writes)| format!("{} {} B", device.name, writes.bytes))
                     .collect::<Vec<_>>().join(", ");
-                lines.push(format!("I/O: {} samples; written {writes}", r.samples_seen));
+                lines.push(format!("I/O: {} samples; written {writes}", request_item.samples_seen));
             }
         }
         #[cfg(any(
@@ -900,7 +925,7 @@ impl Control {
     pub fn stop_diagnostics(&mut self) {
         self.stop_monitor();
         #[cfg(feature = "io-monitor")]
-        if let Some(m) = &mut self.io_context { m.stop(); }
+        if let Some(monitor_item) = &mut self.io_context { monitor_item.stop(); }
         #[cfg(any(
             feature = "diag-memory",
             feature = "diag-klog", feature = "diag-uart",
@@ -910,6 +935,7 @@ impl Control {
         self.diagnostics.stop_and_emit();
     }
     #[cfg(feature = "diag-cycle")]
+    /// Return bounded milliseconds elapsed on the session's monotonic clock.
     pub fn elapsed_ms(&self) -> u64 {
         self.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
     }
@@ -921,15 +947,16 @@ impl Control {
             return Err(io::Error::other("cycle export already configured, child active or invalid settling interval"));
         }
         let suffix = self.path().parent().and_then(Path::file_name)
-            .and_then(|s| s.to_str()).ok_or_else(|| io::Error::other("invalid session identity"))?;
+            .and_then(|sample_item| sample_item.to_str()).ok_or_else(|| io::Error::other("invalid session identity"))?;
         let id = format!("iman-{}-{suffix}", std::process::id());
         self.cycles = Some(Box::new(crate::diagnostics::cycle::Session::new(id, writer, self.elapsed_ms())));
         self.settling = settling;
         #[cfg(feature = "io-monitor")]
-        if let Some(m) = &mut self.monitor { m.begin_segment("session_start")?; }
+        if let Some(monitor_item) = &mut self.monitor { monitor_item.begin_segment("session_start")?; }
         Ok(())
     }
 
+    /// Report whether automatic diagnostic-segment exports were configured.
     pub fn cycle_configured(&self) -> bool {
         #[cfg(feature = "diag-cycle")]
         return self.cycles.is_some();
@@ -937,48 +964,55 @@ impl Control {
         false
     }
 
+    /// Stop future diagnostic-segment exports while preserving the failure reason.
     pub fn disable_cycle_exports(&mut self, _error: &str) {
         #[cfg(feature = "diag-cycle")]
         if let Some(cycles) = &mut self.cycles { cycles.disable(_error); }
     }
 
+    /// Report whether a healthy active diagnostic segment can still collect data.
     pub fn cycle_enabled(&self) -> bool {
         #[cfg(feature = "diag-cycle")]
-        return self.cycles.as_ref().is_some_and(|s| s.error.is_none() && s.active.is_some());
+        return self.cycles.as_ref().is_some_and(|sample_item| sample_item.error.is_none() && sample_item.active.is_some());
         #[cfg(not(feature = "diag-cycle"))]
         false
     }
 
+    /// Return the configured diagnostic settling interval, or zero when collection is disabled.
     pub fn settling_interval(&self) -> Duration {
         #[cfg(feature = "diag-cycle")]
         if self.cycle_enabled() { return self.settling; }
         Duration::ZERO
     }
 
+    /// Report whether a diagnostic export worker is pending.
     pub fn cycle_pending(&self) -> bool {
         #[cfg(feature = "diag-cycle")]
-        return self.cycles.as_ref().is_some_and(|s| s.pending());
+        return self.cycles.as_ref().is_some_and(|sample_item| sample_item.pending());
         #[cfg(not(feature = "diag-cycle"))]
         false
     }
 
+    /// Borrow the first diagnostic-cycle failure, if one was recorded.
     pub fn cycle_error(&self) -> Option<&str> {
         #[cfg(feature = "diag-cycle")]
-        return self.cycles.as_ref().and_then(|s| s.error.as_deref());
+        return self.cycles.as_ref().and_then(|sample_item| sample_item.error.as_deref());
         #[cfg(not(feature = "diag-cycle"))]
         None
     }
 
+    /// Return the current diagnostic export state or an explicit disabled state.
     pub fn cycle_status(&self) -> Value {
         #[cfg(feature = "diag-cycle")]
-        return self.cycles.as_ref().map(|s| s.status()).unwrap_or(json!({"state":"disabled"}));
+        return self.cycles.as_ref().map(|sample_item| sample_item.status()).unwrap_or(json!({"state":"disabled"}));
         #[cfg(not(feature = "diag-cycle"))]
         json!({"state":"disabled"})
     }
 
     #[cfg(feature = "diag-cycle")]
+    /// Borrow the active diagnostic segment for bounded session evidence.
     pub fn cycle_segment(&mut self) -> Option<&mut crate::diagnostics::cycle::Segment> {
-        self.cycles.as_mut().and_then(|s| s.active.as_mut())
+        self.cycles.as_mut().and_then(|sample_item| sample_item.active.as_mut())
     }
 
     /// Freeze inputs, then announce the write before dispatching its worker.
@@ -993,22 +1027,22 @@ impl Control {
             if !self.cycle_enabled() { return Ok(false); }
             if self.child.is_some() { return Err(io::Error::other("cannot export while a child is active")); }
             #[cfg(feature = "io-monitor")]
-            if let Some(m) = &mut self.monitor { m.boundary("diagnostic_export"); }
+            if let Some(monitor_item) = &mut self.monitor { monitor_item.boundary("diagnostic_export"); }
             let ms = self.elapsed_ms();
-            let Some(mut bundle) = self.cycles.as_mut().and_then(|s| s.freeze(ms, _error)) else { return Ok(false); };
+            let Some(mut bundle) = self.cycles.as_mut().and_then(|sample_item| sample_item.freeze(ms, _error)) else { return Ok(false); };
             #[cfg(feature = "io-monitor")]
             {
-                bundle.json("observation.json", &self.monitor.as_ref().map(|m| m.report()))?;
-                bundle.json("cycle-io.json", &self.monitor.as_ref().and_then(|m| m.segment_report()))?;
-                bundle.metadata["io_context"] = match self.io_context.as_ref().map(|m| m.report_json()).transpose() {
+                bundle.json("observation.json", &self.monitor.as_ref().map(|monitor_item| monitor_item.report()))?;
+                bundle.json("cycle-io.json", &self.monitor.as_ref().and_then(|monitor_item| monitor_item.segment_report()))?;
+                bundle.metadata["io_context"] = match self.io_context.as_ref().map(|monitor_item| monitor_item.report_json()).transpose() {
                     Ok(Some(text)) => serde_json::from_str(&text).map_err(io::Error::other)?,
                     Ok(None) => json!({"state":"disabled"}),
                     Err(error) => json!({"state":"failed", "error":error.to_string()}),
                 };
                 bundle.metadata["observation_error"] = json!(self.monitor_error);
-                bundle.metadata["io_state"] = json!(match self.monitor.as_ref().map(|m| m.report()) {
-                    Some(r) if r.error.is_some() => "failed",
-                    Some(r) if r.finished => "stopped",
+                bundle.metadata["io_state"] = json!(match self.monitor.as_ref().map(|monitor_item| monitor_item.report()) {
+                    Some(request_item) if request_item.error.is_some() => "failed",
+                    Some(request_item) if request_item.finished => "stopped",
                     Some(_) => "observing",
                     None if self.monitor_requested => "unavailable",
                     None => "disabled",
@@ -1042,7 +1076,7 @@ impl Control {
             bundle.files.insert("launch.log".into(), log.unwrap_or_default());
             // This new interval measures the writer without resetting master counters.
             #[cfg(feature = "io-monitor")]
-            if let Some(m) = &mut self.monitor { m.begin_segment("diagnostic_export")?; }
+            if let Some(monitor_item) = &mut self.monitor { monitor_item.begin_segment("diagnostic_export")?; }
             self.phase = "diagnostic_export".into();
             _before_write();
             self.cycles.as_mut().unwrap().start(bundle, ms)?;
@@ -1068,24 +1102,24 @@ impl Control {
             }
             let ms = self.elapsed_ms();
             #[cfg(feature = "diag-input")]
-            let previous_sequence = self.cycles.as_ref().and_then(|s| s.active.as_ref()).map(|s| s.sequence);
+            let previous_sequence = self.cycles.as_ref().and_then(|sample_item| sample_item.active.as_ref()).map(|sample_item| sample_item.sequence);
             self.cycles.as_mut().unwrap().begin_next(ms);
             #[cfg(feature = "diag-input")]
             if self.cycle_enabled()
-                && previous_sequence != self.cycles.as_ref().and_then(|s| s.active.as_ref()).map(|s| s.sequence)
+                && previous_sequence != self.cycles.as_ref().and_then(|sample_item| sample_item.active.as_ref()).map(|sample_item| sample_item.sequence)
             { self.input_test.next_segment(); }
             #[cfg(feature = "io-monitor")]
             if self.cycle_enabled() {
-                if let Some(m) = &mut self.monitor {
-                    m.boundary("starting_gui");
+                if let Some(monitor_item) = &mut self.monitor {
+                    monitor_item.boundary("starting_gui");
                     if let Some(receipt) = &mut self.cycles.as_mut().unwrap().previous_export {
                         receipt["end_ms"] = json!(ms);
-                        receipt["io"] = m.segment_report().map(|r| json!({
-                            "baseline_ms":r.baseline_ms,"end_ms":r.elapsed_ms,
-                            "baseline":r.baseline,"latest":r.latest,"totals":r.totals,"error":r.error
+                        receipt["io"] = monitor_item.segment_report().map(|request_item| json!({
+                            "baseline_ms":request_item.baseline_ms,"end_ms":request_item.elapsed_ms,
+                            "baseline":request_item.baseline,"latest":request_item.latest,"totals":request_item.totals,"error":request_item.error
                         })).unwrap_or(Value::Null);
                     }
-                    if let Err(error) = m.begin_segment("starting_gui") {
+                    if let Err(error) = monitor_item.begin_segment("starting_gui") {
                         self.monitor_error = Some(error.to_string());
                     }
                 }
@@ -1093,6 +1127,7 @@ impl Control {
         }
     }
 
+    /// Finalize monitors and report resources, retaining whether the session failed or was cancelled.
     pub fn finish(&mut self, error: Option<String>, cancelled: bool) -> io::Result<()> {
         #[cfg(feature = "diag-memdump")]
         self.memory_dump.skip("normal session-end capture was not reached");

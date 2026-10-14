@@ -80,8 +80,8 @@ pub fn draw_report_path<D: DrawTarget<Color = Rgb888>>(
     let chars: Vec<_> = path.chars().collect();
     let lines: Vec<String> = chars.chunks(columns).map(|line| line.iter().collect()).collect();
     let top = center.y - (lines.len() as i32 * 26 + 46) / 2;
-    let mut line = |value: &str, y: i32, color| {
-        Text::with_baseline(value, Point::new(center.x - value.chars().count() as i32 * 5, y),
+    let mut line = |value: &str, position_y: i32, color| {
+        Text::with_baseline(value, Point::new(center.x - value.chars().count() as i32 * 5, position_y),
             MonoTextStyle::new(&FONT_10X20, color), Baseline::Top).draw(target).map(|_| ())
     };
     line("Report saved", top, Rgb888::new(119, 207, 180))?;
@@ -134,6 +134,7 @@ pub struct DiagnosticScreen {
     previous: Option<DiagnosticState>,
 }
 impl DiagnosticScreen {
+    /// Redraw only changed diagnostic-screen regions for the supplied message and elapsed seconds.
     pub fn update<D: DrawTarget<Color = Rgb888>>(
         &mut self, target: &mut D, message: &str, seconds: u64,
     ) -> Result<Redraw, D::Error> {
@@ -156,10 +157,10 @@ impl DiagnosticScreen {
             }
             for row in 0..old.lines.len().max(next.lines.len()) {
                 if old.lines.get(row) == next.lines.get(row) { continue; }
-                let y = bounds.center().y + 64 + row as i32 * 17;
-                target.fill_solid(&Rectangle::new(Point::new(bounds.top_left.x, y),
+                let position_y = bounds.center().y + 64 + row as i32 * 17;
+                target.fill_solid(&Rectangle::new(Point::new(bounds.top_left.x, position_y),
                     Size::new(bounds.size.width, 13)), BACKGROUND)?;
-                if let Some(line) = next.lines.get(row) { draw_line(target, bounds, line, y, MUTED)?; }
+                if let Some(line) = next.lines.get(row) { draw_line(target, bounds, line, position_y, MUTED)?; }
                 redraw = Redraw::Partial;
             }
         }
@@ -175,9 +176,9 @@ fn draw_title<D: DrawTarget<Color = Rgb888>>(
     Text::with_baseline("IMAN", Point::zero(), MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE),
         Baseline::Top).draw(&mut logo).unwrap();
     let origin = bounds.center() - Point::new(80, 40);
-    for (i, &pixel) in logo.pixels().iter().enumerate() {
+    for (index_item, &pixel) in logo.pixels().iter().enumerate() {
         if pixel != 0 {
-            target.fill_solid(&Rectangle::new(origin + Point::new((i % 40) as i32 * 4, (i / 40) as i32 * 4),
+            target.fill_solid(&Rectangle::new(origin + Point::new((index_item % 40) as i32 * 4, (index_item / 40) as i32 * 4),
                 Size::new(4, 4)), color)?;
         }
     }
@@ -185,9 +186,9 @@ fn draw_title<D: DrawTarget<Color = Rgb888>>(
 }
 
 fn draw_line<D: DrawTarget<Color = Rgb888>>(
-    target: &mut D, bounds: Rectangle, value: &str, y: i32, color: Rgb888,
+    target: &mut D, bounds: Rectangle, value: &str, position_y: i32, color: Rgb888,
 ) -> Result<(), D::Error> {
-    Text::with_baseline(value, Point::new(bounds.center().x - value.chars().count() as i32 * 7 / 2, y),
+    Text::with_baseline(value, Point::new(bounds.center().x - value.chars().count() as i32 * 7 / 2, position_y),
         MonoTextStyle::new(&FONT_7X13, color), Baseline::Top).draw(target)?;
     Ok(())
 }
@@ -206,7 +207,7 @@ fn message_lines(bounds: Rectangle, message: &str) -> Vec<String> {
         for _ in 0..columns {
             match chars.next() {
                 Some('\n') | None => break,
-                Some(c) => value.push(c),
+                Some(character) => value.push(character),
             }
         }
         if value.chars().count() == columns && chars.peek() == Some(&'\n') { chars.next(); }
@@ -242,8 +243,8 @@ pub fn countdown<D: DrawTarget<Color = Rgb888>>(
 ) -> Result<(), D::Error> {
     let bounds = target.bounding_box();
     let right = bounds.top_left.x + bounds.size.width as i32 - 32;
-    let y = bounds.top_left.y + bounds.size.height as i32 - 40;
-    let bottom = y + 13;
+    let position_y = bounds.top_left.y + bounds.size.height as i32 - 40;
+    let bottom = position_y + 13;
     let icon_height = FAREWELL.len() as i32;
     target.fill_solid(
         &Rectangle::new(Point::new(right - 126, bottom - icon_height), Size::new(126, icon_height as u32)),
@@ -252,9 +253,9 @@ pub fn countdown<D: DrawTarget<Color = Rgb888>>(
     if remaining == 0 {
         let origin = Point::new(right - 32, bottom - icon_height);
         return target.draw_iter(FAREWELL.iter().enumerate().flat_map(|(row, bits)| {
-            (0..32).filter_map(move |x| {
-                (bits & (1_u32 << (31 - x)) != 0).then_some(Pixel(
-                    origin + Point::new(x, row as i32), Rgb888::new(220, 0, 0),
+            (0..32).filter_map(move |position_x| {
+                (bits & (1_u32 << (31 - position_x)) != 0).then_some(Pixel(
+                    origin + Point::new(position_x, row as i32), Rgb888::new(220, 0, 0),
                 ))
             })
         }));
@@ -262,7 +263,7 @@ pub fn countdown<D: DrawTarget<Color = Rgb888>>(
     let label = format!("Leaving in {remaining} ...");
     Text::with_baseline(
         &label,
-        Point::new(right - label.len() as i32 * 7, y),
+        Point::new(right - label.len() as i32 * 7, position_y),
         MonoTextStyle::new(&FONT_7X13, Rgb888::new(151, 169, 174)),
         Baseline::Top,
     )

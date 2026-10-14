@@ -74,23 +74,23 @@ fn arrow<D: DrawTarget<Color = Rgb888>>(target: &mut D, center: Point, direction
 
 fn diagram<D: DrawTarget<Color = Rgb888>>(target: &mut D, step: usize) -> Result<(), D::Error> {
     // Rounded rectangles avoid the ellipse rasterizer's large-diameter arithmetic.
-    for (x, y, w, h) in [(345, 326, 175, 220), (760, 326, 175, 220), (360, 292, 560, 213)] {
-        RoundedRectangle::with_equal_corners(Rectangle::new(Point::new(x, y), Size::new(w, h)), Size::new(150, 150))
+    for (position_x, position_y, width_item, height_item) in [(345, 326, 175, 220), (760, 326, 175, 220), (360, 292, 560, 213)] {
+        RoundedRectangle::with_equal_corners(Rectangle::new(Point::new(position_x, position_y), Size::new(width_item, height_item)), Size::new(150, 150))
             .into_styled(PrimitiveStyle::with_fill(BODY)).draw(target)?;
     }
-    for (x, left) in [(410, true), (770, false)] {
-        RoundedRectangle::with_equal_corners(Rectangle::new(Point::new(x - 6, 239), Size::new(112, 85)), Size::new(12, 12))
+    for (position_x, left) in [(410, true), (770, false)] {
+        RoundedRectangle::with_equal_corners(Rectangle::new(Point::new(position_x - 6, 239), Size::new(112, 85)), Size::new(12, 12))
             .into_styled(PrimitiveStyle::with_fill(BODY)).draw(target)?;
-        button(target, Rectangle::new(Point::new(x, 226), Size::new(100, 40)), if left { "L2" } else { "R2" }, step == if left { 12 } else { 13 }, false)?;
-        button(target, Rectangle::new(Point::new(x, 282), Size::new(100, 24)), if left { "L1" } else { "R1" }, step == if left { 10 } else { 11 }, false)?;
+        button(target, Rectangle::new(Point::new(position_x, 226), Size::new(100, 40)), if left { "L2" } else { "R2" }, step == if left { 12 } else { 13 }, false)?;
+        button(target, Rectangle::new(Point::new(position_x, 282), Size::new(100, 24)), if left { "L1" } else { "R1" }, step == if left { 10 } else { 11 }, false)?;
     }
-    for (index, (x, y, label)) in [(0, (449, 368, "^")), (1, (449, 432, "v")), (2, (417, 400, "<")), (3, (481, 400, ">"))] {
-        button(target, Rectangle::new(Point::new(x, y), Size::new(32, 32)), label, step == index, false)?;
+    for (index, (position_x, position_y, label)) in [(0, (449, 368, "^")), (1, (449, 432, "v")), (2, (417, 400, "<")), (3, (481, 400, ">"))] {
+        button(target, Rectangle::new(Point::new(position_x, position_y), Size::new(32, 32)), label, step == index, false)?;
     }
     target.fill_solid(&Rectangle::new(Point::new(449, 400), Size::new(32, 32)), KEY)?;
-    for (index, x, y, letter) in [(7, 820, 347, "Y"), (5, 877, 404, "B"), (4, 820, 461, "A"), (6, 763, 404, "X")] {
+    for (index, position_x, position_y, letter) in [(7, 820, 347, "Y"), (5, 877, 404, "B"), (4, 820, 461, "A"), (6, 763, 404, "X")] {
         let active = step == index;
-        let center = Point::new(x, y);
+        let center = Point::new(position_x, position_y);
         button(target, Rectangle::new(center - Point::new(32, 32), Size::new(64, 64)), "", active, true)?;
         let color = if active { BACKGROUND } else { MUTED };
         text(target, letter, center + Point::new(13, 0), 1, color)?;
@@ -109,11 +109,11 @@ fn diagram<D: DrawTarget<Color = Rgb888>>(target: &mut D, step: usize) -> Result
     button(target, Rectangle::new(Point::new(617, 340), Size::new(46, 46)), "H", step == 16, true)?;
     button(target, Rectangle::new(Point::new(526, 408), Size::new(94, 28)), "SELECT", step == 8, false)?;
     button(target, Rectangle::new(Point::new(639, 408), Size::new(80, 28)), "START", step == 9, false)?;
-    for (x, press, first, label) in [(557, 14, 17, "L3"), (707, 15, 21, "R3")] {
+    for (position_x, press, first, label) in [(557, 14, 17, "L3"), (707, 15, 21, "R3")] {
         let moving = (first..first + 4).contains(&step);
         let active = step == press || moving;
-        button(target, Rectangle::new(Point::new(x - 36, 474), Size::new(72, 72)), if moving { "" } else { label }, active, true)?;
-        if moving { arrow(target, Point::new(x, 510), step - first, BACKGROUND)?; }
+        button(target, Rectangle::new(Point::new(position_x - 36, 474), Size::new(72, 72)), if moving { "" } else { label }, active, true)?;
+        if moving { arrow(target, Point::new(position_x, 510), step - first, BACKGROUND)?; }
     }
     Ok(())
 }
@@ -126,6 +126,7 @@ pub struct Screen {
 }
 
 impl Screen {
+    /// Redraw only changed controller-test screen regions.
     pub fn update<D: DrawTarget<Color = Rgb888>>(
         &mut self, target: &mut D, view: &View,
     ) -> Result<Redraw, D::Error> {
@@ -242,6 +243,7 @@ fn draw_instruction<D: DrawTarget<Color = Rgb888>>(
     Ok(())
 }
 
+/// Draw a complete controller-test screen from the supplied view.
 pub fn draw<D: DrawTarget<Color = Rgb888>>(target: &mut D, view: &View) -> Result<(), D::Error> {
     target.clear(BACKGROUND)?;
     let bounds = target.bounding_box();

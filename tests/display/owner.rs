@@ -31,7 +31,7 @@ impl Backend for Fake {
         self.0
             .borrow()
             .master_errno
-            .map_or(Ok(()), |e| Err(io::Error::from_raw_os_error(e)))
+            .map_or(Ok(()), |error_item| Err(io::Error::from_raw_os_error(error_item)))
     }
     fn release_master(&mut self) -> io::Result<()> {
         self.call("release")

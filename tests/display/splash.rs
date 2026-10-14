@@ -14,16 +14,16 @@ const BACKGROUND: u32 = 0x0f151d;
 const MUTED: u32 = 0x97a9ae;
 const RED: u32 = 0xf05b5b;
 
-fn caption(value: &str, y: i32) -> Surface {
-    caption_font(value, y, &FONT_7X13)
+fn caption(value: &str, position_y: i32) -> Surface {
+    caption_font(value, position_y, &FONT_7X13)
 }
 
-fn caption_font(value: &str, y: i32, font: &embedded_graphics::mono_font::MonoFont<'_>) -> Surface {
+fn caption_font(value: &str, position_y: i32, font: &embedded_graphics::mono_font::MonoFont<'_>) -> Surface {
     let mut surface = Surface::new(splash::WIDTH, splash::HEIGHT);
     surface.clear(Rgb888::new(15, 21, 29)).unwrap();
     Text::with_baseline(
         value,
-        Point::new(639 - value.chars().count() as i32 * font.character_size.width as i32 / 2, y),
+        Point::new(639 - value.chars().count() as i32 * font.character_size.width as i32 / 2, position_y),
         MonoTextStyle::new(font, Rgb888::new(151, 169, 174)),
         Baseline::Top,
     )
@@ -38,18 +38,18 @@ fn startup_has_centered_title_and_neutral_status_without_subtitle() {
     let status = caption("...", 423);
     let width = splash::WIDTH as usize;
 
-    assert!(frame.pixels()[399 * width..423 * width].iter().all(|&p| p == BACKGROUND));
+    assert!(frame.pixels()[399 * width..423 * width].iter().all(|&pixel_item| pixel_item == BACKGROUND));
     assert_eq!(
         &frame.pixels()[423 * width..443 * width],
         &status.pixels()[423 * width..443 * width],
     );
     let title = caption_font("IMAN", 0, &FONT_10X20);
     // Check the exact glyphs and 4x nearest-neighbour scaling, not just colours.
-    for y in 0..80 {
-        for x in 0..160 {
-            let source = title.pixels()[(y / 4) * width + 619 + x / 4];
+    for position_y in 0..80 {
+        for position_x in 0..160 {
+            let source = title.pixels()[(position_y / 4) * width + 619 + position_x / 4];
             assert_eq!(
-                frame.pixels()[(319 + y) * width + 559 + x],
+                frame.pixels()[(319 + position_y) * width + 559 + position_x],
                 if source == BACKGROUND { BACKGROUND } else { 0x77cfb4 },
             );
         }
@@ -64,10 +64,10 @@ fn errors_change_only_the_message_colour_not_its_font_or_header() {
     let error = splash::frame(&message, true);
     let mut changed = 0;
 
-    for (i, (&a, &b)) in normal.pixels().iter().zip(error.pixels()).enumerate() {
-        if a != b {
-            assert_eq!((a, b), (MUTED, RED));
-            assert!((423..436).contains(&(i / splash::WIDTH as usize)));
+    for (index_item, (&first_item, &second_item)) in normal.pixels().iter().zip(error.pixels()).enumerate() {
+        if first_item != second_item {
+            assert_eq!((first_item, second_item), (MUTED, RED));
+            assert!((423..436).contains(&(index_item / splash::WIDTH as usize)));
             changed += 1;
         }
     }
@@ -83,11 +83,11 @@ fn long_paths_wrap_without_losing_spaces_or_unicode_characters() {
     let width = splash::WIDTH as usize;
 
     for (row, chunk) in chars.chunks(173).enumerate() {
-        let y = 423 + row * 17;
-        let expected = caption(&chunk.iter().collect::<String>(), y as i32);
+        let position_y = 423 + row * 17;
+        let expected = caption(&chunk.iter().collect::<String>(), position_y as i32);
         assert_eq!(
-            &frame.pixels()[y * width..(y + 13) * width],
-            &expected.pixels()[y * width..(y + 13) * width],
+            &frame.pixels()[position_y * width..(position_y + 13) * width],
+            &expected.pixels()[position_y * width..(position_y + 13) * width],
         );
     }
 }
@@ -102,7 +102,7 @@ fn overlong_messages_have_a_visible_ellipsis_instead_of_clipped_text() {
         &frame.pixels()[627 * width..640 * width],
         &expected.pixels()[627 * width..640 * width],
     );
-    assert!(frame.pixels()[640 * width..680 * width].iter().all(|&p| p == BACKGROUND));
+    assert!(frame.pixels()[640 * width..680 * width].iter().all(|&pixel_item| pixel_item == BACKGROUND));
 }
 
 #[test]
@@ -165,12 +165,12 @@ fn diagnostic_status_uses_separate_lines_without_a_departure_countdown() {
     let width = splash::WIDTH as usize;
 
     for (index, line) in lines.iter().enumerate() {
-        let y = 423 + index * 17;
-        let expected = caption(line, y as i32);
-        assert_eq!(&frame.pixels()[y * width..(y + 13) * width], &expected.pixels()[y * width..(y + 13) * width]);
+        let position_y = 423 + index * 17;
+        let expected = caption(line, position_y as i32);
+        assert_eq!(&frame.pixels()[position_y * width..(position_y + 13) * width], &expected.pixels()[position_y * width..(position_y + 13) * width]);
     }
-    for y in 653..693 {
-        assert!(frame.pixels()[y * width + 1122..y * width + 1248].iter().all(|&p| p == BACKGROUND));
+    for position_y in 653..693 {
+        assert!(frame.pixels()[position_y * width + 1122..position_y * width + 1248].iter().all(|&pixel_item| pixel_item == BACKGROUND));
     }
 }
 
@@ -209,12 +209,12 @@ fn countdown_changes_only_the_bottom_right_footer_and_erases_old_digits() {
             Baseline::Top,
         ).draw(&mut expected).unwrap();
 
-        for (i, &pixel) in frame.pixels().iter().enumerate() {
-            let (x, y) = (i % splash::WIDTH as usize, i / splash::WIDTH as usize);
-            assert_eq!(pixel, if (1122..1248).contains(&x) && (653..693).contains(&y) {
-                expected.pixels()[i]
+        for (index_item, &pixel) in frame.pixels().iter().enumerate() {
+            let (position_x, position_y) = (index_item % splash::WIDTH as usize, index_item / splash::WIDTH as usize);
+            assert_eq!(pixel, if (1122..1248).contains(&position_x) && (653..693).contains(&position_y) {
+                expected.pixels()[index_item]
             } else {
-                original[i]
+                original[index_item]
             });
         }
     }
@@ -229,27 +229,27 @@ fn farewell_replaces_text_with_a_small_red_fist_without_a_backplate() {
     splash::countdown(&mut frame, 0).unwrap();
 
     let mut red = 0;
-    for (i, &pixel) in frame.pixels().iter().enumerate() {
-        let (x, y) = (i % splash::WIDTH as usize, i / splash::WIDTH as usize);
-        if (1216..1248).contains(&x) && (653..693).contains(&y) {
+    for (index_item, &pixel) in frame.pixels().iter().enumerate() {
+        let (position_x, position_y) = (index_item % splash::WIDTH as usize, index_item / splash::WIDTH as usize);
+        if (1216..1248).contains(&position_x) && (653..693).contains(&position_y) {
             assert!(matches!(pixel, BACKGROUND | 0xdc0000));
             red += usize::from(pixel == 0xdc0000);
         } else {
-            assert_eq!(pixel, original.pixels()[i]);
+            assert_eq!(pixel, original.pixels()[index_item]);
         }
     }
     assert_eq!(red, 501);
     // Selected variant 1 has a continuous wrist, not a diagonal gap through it.
-    for y in 680..689 {
-        for x in 1227..1238 {
-            assert_eq!(frame.pixels()[y * splash::WIDTH as usize + x], 0xdc0000);
+    for position_y in 680..689 {
+        for position_x in 1227..1238 {
+            assert_eq!(frame.pixels()[position_y * splash::WIDTH as usize + position_x], 0xdc0000);
         }
     }
     // Rounded lower corners and transparent padding, without a backplate.
-    for (x, y, color) in [(1229, 691, 0xdc0000), (1237, 691, 0xdc0000),
+    for (position_x, position_y, color) in [(1229, 691, 0xdc0000), (1237, 691, 0xdc0000),
                          (1228, 691, BACKGROUND), (1238, 691, BACKGROUND),
                          (1216, 653, BACKGROUND), (1247, 692, BACKGROUND)] {
-        assert_eq!(frame.pixels()[y * splash::WIDTH as usize + x], color);
+        assert_eq!(frame.pixels()[position_y * splash::WIDTH as usize + position_x], color);
     }
     let mut clean = splash::frame("Missing IGUI", true);
     splash::countdown(&mut clean, 0).unwrap();

@@ -233,9 +233,9 @@ fn reset_wrap_identity_change_overflow_and_time_reversal_do_not_commit() {
 #[test]
 fn history_and_serialized_report_are_bounded_but_totals_cover_whole_run() {
     let mut recorder = new_recorder();
-    for n in 0..1000 {
+    for count_item in 0..1000 {
         recorder
-            .sample(n * 1000, "gui", &row("mmcblk0", n, n * 8, n * 3))
+            .sample(count_item * 1000, "gui", &row("mmcblk0", count_item, count_item * 8, count_item * 3))
             .unwrap();
     }
     recorder.stop(None);
@@ -276,8 +276,8 @@ fn missing_gui_diagnostics_and_error_phases_keep_recording_until_explicit_stop()
     for (index, phase) in ["session_start", "gui_start", "gui_diagnostics", "gui_error", "session_end"]
         .into_iter().enumerate()
     {
-        let n = index as u64;
-        recorder.sample(n * 1000, phase, &row("mmcblk0", n, n, n)).unwrap();
+        let count_item = index as u64;
+        recorder.sample(count_item * 1000, phase, &row("mmcblk0", count_item, count_item, count_item)).unwrap();
     }
     recorder.stop(None);
 
@@ -327,9 +327,9 @@ fn tmpfs_report_is_private_retained_bounded_and_rewrites_without_stale_tail() {
     let mut output = RamReport::create(root.path()).unwrap();
     let path = output.path().to_path_buf();
     let mut recorder = new_recorder();
-    for n in 0..150 {
+    for count_item in 0..150 {
         recorder
-            .sample(n * 1000, "gui", &row("mmcblk0", n, n, n))
+            .sample(count_item * 1000, "gui", &row("mmcblk0", count_item, count_item, count_item))
             .unwrap();
         output.write(recorder.report()).unwrap();
     }
@@ -381,8 +381,8 @@ fn master_and_segment_use_one_poll_and_remain_live_across_immutable_export() {
     let source = calls.clone();
     let mut monitor = iman::diagnostics::io::Monitor::start_using(vec!["mmcblk0".into()], root.path(),
         std::time::Instant::now(), Box::new(move || {
-            let n = source.fetch_add(1, Ordering::SeqCst);
-            Ok(format!("179 0 mmcblk0 0 0 0 0 {n} 0 {n} {n} 0 0 0\n"))
+            let count_item = source.fetch_add(1, Ordering::SeqCst);
+            Ok(format!("179 0 mmcblk0 0 0 0 0 {count_item} 0 {count_item} {count_item} 0 0 0\n"))
         })).unwrap();
     monitor.begin_segment("session_start").unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -415,17 +415,17 @@ fn read_and_write_activity_survives_a_long_idle_tail_without_charging_baselines(
     recorder.sample(0, "gui", &initial).unwrap();
     recorder.sample(1000, "game", &reads).unwrap();
     recorder.sample(2000, "game", &both).unwrap();
-    for n in 3..100 { recorder.sample(n * 1000, "game", &both).unwrap(); }
+    for count_item in 3..100 { recorder.sample(count_item * 1000, "game", &both).unwrap(); }
 
-    let r = recorder.report();
-    assert_eq!(r.read_totals[0].bytes, 16 * 512);
-    assert_eq!(r.read_totals[0].ios, 2);
-    assert_eq!(r.read_totals[0].request_ms, 5);
-    assert_eq!(r.totals[0].bytes, 8 * 512);
-    assert_eq!(r.activity.len(), 2);
-    assert_eq!(r.activity[0].elapsed_ms, 1000);
-    assert_eq!(r.phases["gui"].reads[0].bytes, 16 * 512);
-    assert!(r.history.iter().all(|s| s.reads[0].bytes == 0 && s.writes[0].bytes == 0));
+    let report_item = recorder.report();
+    assert_eq!(report_item.read_totals[0].bytes, 16 * 512);
+    assert_eq!(report_item.read_totals[0].ios, 2);
+    assert_eq!(report_item.read_totals[0].request_ms, 5);
+    assert_eq!(report_item.totals[0].bytes, 8 * 512);
+    assert_eq!(report_item.activity.len(), 2);
+    assert_eq!(report_item.activity[0].elapsed_ms, 1000);
+    assert_eq!(report_item.phases["gui"].reads[0].bytes, 16 * 512);
+    assert!(report_item.history.iter().all(|sample_item| sample_item.reads[0].bytes == 0 && sample_item.writes[0].bytes == 0));
     let mut segment = recorder.fork_interval("post_game").unwrap();
     segment.sample(100_000, "post_game", &both).unwrap();
     assert_eq!(segment.report().read_totals[0].bytes, 0);
@@ -448,12 +448,12 @@ fn read_counter_regression_and_overflow_do_not_commit_a_partial_sample() {
 fn activity_evictions_and_maximum_width_reports_remain_bounded() {
     let names = vec!["mmcblk0".into(), "mmcblk0p1".into()];
     let mut recorder = Recorder::new(names).unwrap();
-    let row = |name, n: u64| format!("179 {} {name} {n} 0 {n} {n} {n} 0 {n} {n} 18446744073709551615 0 0\n", if name == "mmcblk0" {0} else {1});
+    let row = |name, count_item: u64| format!("179 {} {name} {count_item} 0 {count_item} {count_item} {count_item} 0 {count_item} {count_item} 18446744073709551615 0 0\n", if name == "mmcblk0" {0} else {1});
     let base = 10_000_000_000_000_000u64;
-    for n in 0..100 {
-        let time = 10_000_000_000_000_000_000u64 + n;
-        let counts = base + n * 100_000_000_000_000;
-        recorder.sample(time, if n % 2 == 0 {"diagnostic_export"} else {"display_reclaim"},
+    for count_item in 0..100 {
+        let time = 10_000_000_000_000_000_000u64 + count_item;
+        let counts = base + count_item * 100_000_000_000_000;
+        recorder.sample(time, if count_item % 2 == 0 {"diagnostic_export"} else {"display_reclaim"},
             &(row("mmcblk0", counts) + &row("mmcblk0p1", counts))).unwrap();
     }
     let report = recorder.report();

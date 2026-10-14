@@ -78,6 +78,7 @@ fn is_usb_related(line: &str) -> bool {
     })
 }
 
+/// Read and parse one bounded kernel-log snapshot through the supplied read operation.
 pub fn capture_with(read_all: impl FnOnce(&mut [u8]) -> io::Result<usize>) -> io::Result<Snapshot> {
     let mut buffer = vec![0; LIMIT];
     let size = read_all(&mut buffer)?;
@@ -92,13 +93,13 @@ pub fn capture_with(read_all: impl FnOnce(&mut [u8]) -> io::Result<usize>) -> io
         let line = String::from_utf8_lossy(raw);
         count += 1;
         if selected.len() == RECORDS { selected.pop_front(); }
-        let (priority, rest) = line.strip_prefix('<').and_then(|s| s.split_once('>'))
-            .and_then(|(pri, rest)| pri.parse::<u8>().ok().filter(|p| *p <= 191).map(|p| (Some(p), rest)))
+        let (priority, rest) = line.strip_prefix('<').and_then(|sample| sample.split_once('>'))
+            .and_then(|(pri, rest)| pri.parse::<u8>().ok().filter(|part| *part <= 191).map(|part| (Some(part), rest)))
             .unwrap_or((None, line.as_ref()));
-        let kernel_us = rest.trim_start().strip_prefix('[').and_then(|s| s.split_once(']'))
+        let kernel_us = rest.trim_start().strip_prefix('[').and_then(|sample| sample.split_once(']'))
             .and_then(|(stamp, _)| {
                 let (seconds, fraction) = stamp.trim().split_once('.')?;
-                if fraction.is_empty() || fraction.len() > 6 || !fraction.bytes().all(|b| b.is_ascii_digit()) { return None; }
+                if fraction.is_empty() || fraction.len() > 6 || !fraction.bytes().all(|byte_item| byte_item.is_ascii_digit()) { return None; }
                 seconds.parse::<u64>().ok()?.checked_mul(1_000_000)?
                     .checked_add(fraction.parse::<u64>().ok()? * 10u64.pow(6 - fraction.len() as u32))
             });
@@ -136,6 +137,7 @@ pub fn capture_with(read_all: impl FnOnce(&mut [u8]) -> io::Result<usize>) -> io
 }
 
 #[cfg(target_os = "linux")]
+/// Read a non-consuming kernel-log snapshot on Linux.
 pub fn capture() -> io::Result<Snapshot> {
     capture_with(|buffer| {
         // SYSLOG_ACTION_READ_ALL=3 reads without clearing or consuming /proc/kmsg.
@@ -151,6 +153,7 @@ pub fn capture() -> io::Result<Snapshot> {
 }
 
 #[cfg(not(target_os = "linux"))]
+/// Return an unsupported-platform error instead of reading a kernel log.
 pub fn capture() -> io::Result<Snapshot> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
@@ -230,9 +233,11 @@ impl Default for Monitor {
     }
 }
 impl Monitor {
+    /// Borrow retained bounded kernel-log observations.
     pub fn report(&self) -> &Report {
         &self.report
     }
+    /// Stop further kernel-log sampling.
     pub fn stop(&mut self) {
         self.report.stopped = true;
     }
@@ -246,7 +251,7 @@ impl Monitor {
             || phase.is_empty()
             || !phase
                 .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                .all(|character| character.is_ascii_alphanumeric() || character == b'_')
         {
             self.report.error = Some("invalid kernel sample clock or phase".into());
             self.stop();
@@ -261,7 +266,7 @@ impl Monitor {
         let (mut snapshot, error) = match read().and_then(|snapshot| {
             if snapshot.bytes_read > LIMIT
                 || snapshot.records.len() > RECORDS
-                || snapshot.records.iter().any(|s| s.len() > 240)
+                || snapshot.records.iter().any(|sample| sample.len() > 240)
                 || snapshot.record_info.len() != snapshot.records.len()
                 || snapshot.fingerprints.len() != snapshot.records.len()
             {
@@ -277,23 +282,23 @@ impl Monitor {
                         .to_string()
                         .chars()
                         .take(120)
-                        .map(|c| if c.is_control() { '?' } else { c })
+                        .map(|character| if character.is_control() { '?' } else { character })
                         .collect(),
                 ),
             ),
         };
         let overlap = snapshot.as_ref().and_then(|current| self.previous.as_ref().map(|previous| {
             (1..=previous.len().min(current.fingerprints.len())).rev()
-                .find(|&n| previous[previous.len() - n..] == current.fingerprints[..n]).unwrap_or(0)
+                .find(|&number| previous[previous.len() - number..] == current.fingerprints[..number]).unwrap_or(0)
         }));
         let comparison = if self.report.samples == 0 { "initial_inventory" }
             else if error.is_some() { "read_error" }
             else if self.previous.is_none() { "after_read_error" }
             else { "content_overlap_only" };
-        self.previous = snapshot.as_ref().map(|s| s.fingerprints.clone());
-        let r = &mut self.report;
+        self.previous = snapshot.as_ref().map(|sample| sample.fingerprints.clone());
+        let record_item = &mut self.report;
         if let Some(current) = snapshot.as_mut() {
-            let usb = &mut r.usb;
+            let usb = &mut record_item.usb;
             usb.last_successful_sample_ms = Some(ms);
             if current.usb.matching_lines > 0 { usb.last_matching_sample_ms = Some(ms); }
             usb.matching_line_observations = usb.matching_line_observations.saturating_add(current.usb.matching_lines as u64);
@@ -316,13 +321,13 @@ impl Monitor {
             }
             self.previous_usb = fingerprints;
         }
-        r.samples += 1;
-        r.read_errors += u64::from(error.is_some());
-        if r.history.len() == HISTORY_LIMIT {
-            r.history.pop_front();
-            r.history_dropped += 1;
+        record_item.samples += 1;
+        record_item.read_errors += u64::from(error.is_some());
+        if record_item.history.len() == HISTORY_LIMIT {
+            record_item.history.pop_front();
+            record_item.history_dropped += 1;
         }
-        r.history.push_back(Sample {
+        record_item.history.push_back(Sample {
             ms,
             phase: phase.into(),
             snapshot,
@@ -331,9 +336,10 @@ impl Monitor {
             error,
         });
         let us = started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
-        r.sample_us_sum = r.sample_us_sum.saturating_add(us);
-        r.sample_us_max = r.sample_us_max.max(us);
+        record_item.sample_us_sum = record_item.sample_us_sum.saturating_add(us);
+        record_item.sample_us_max = record_item.sample_us_max.max(us);
     }
+    /// Encode the bounded report without treating overlapping snapshots as new-event counts.
     pub fn report_json(&self) -> io::Result<String> {
         let mut report = self.report.clone();
         let usb_bytes = serde_json::to_vec(&report.usb).map_err(io::Error::other)?.len();
@@ -348,8 +354,8 @@ impl Monitor {
             } else if let Some(snapshot) = report
                 .history
                 .front_mut()
-                .and_then(|s| s.snapshot.as_mut())
-                .filter(|s| !s.records.is_empty())
+                .and_then(|sample| sample.snapshot.as_mut())
+                .filter(|sample| !sample.records.is_empty())
             {
                 snapshot.records.remove(0);
                 snapshot.record_info.remove(0);

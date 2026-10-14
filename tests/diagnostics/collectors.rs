@@ -10,47 +10,47 @@ use iman::diagnostics::collectors::Collectors;
 
 #[test]
 fn startup_enables_compiled_modules_and_runtime_start_stop_commands_are_absent() {
-    let mut c = Collectors::default();
-    c.enable_defaults();
+    let mut collectors_item = Collectors::default();
+    collectors_item.enable_defaults();
     for name in Collectors::capabilities().into_iter()
         .filter_map(|command| command.strip_suffix(".report"))
     {
-        let report = c.command(&format!("{name}.report")).unwrap();
+        let report = collectors_item.command(&format!("{name}.report")).unwrap();
         assert_eq!(report["stopped"], false);
-        assert!(c.command(&format!("{name}.start")).is_err());
-        assert!(c.command(&format!("{name}.stop")).is_err());
+        assert!(collectors_item.command(&format!("{name}.start")).is_err());
+        assert!(collectors_item.command(&format!("{name}.stop")).is_err());
     }
-    c.stop_and_emit();
-    c.stop_and_emit();
-    for command in Collectors::capabilities().into_iter().filter(|s| s.ends_with(".report")) {
-        assert_eq!(c.command(command).unwrap()["stopped"], true);
+    collectors_item.stop_and_emit();
+    collectors_item.stop_and_emit();
+    for command in Collectors::capabilities().into_iter().filter(|sample| sample.ends_with(".report")) {
+        assert_eq!(collectors_item.command(command).unwrap()["stopped"], true);
     }
 }
 
 #[test]
 fn standalone_status_never_claims_gui_measurements_or_samples_disabled_modules() {
-    let mut c = Collectors::default();
-    c.enable_defaults();
-    let lines = c.status_without_gui();
+    let mut collectors_item = Collectors::default();
+    collectors_item.enable_defaults();
+    let lines = collectors_item.status_without_gui();
 
     #[cfg(feature = "diag-memory")]
     assert!(lines.iter().any(|line| line == "RAM: 0 samples, 0 read errors"));
     #[cfg(feature = "diag-klog")]
     assert!(lines.iter().any(|line| line == "Kernel log: 0 samples, 0 read errors"));
     assert!(!lines.iter().any(|line| line.contains("IGUI") || line.contains("Input")));
-    c.stop_and_emit();
-    assert!(c.status_without_gui().is_empty());
+    collectors_item.stop_and_emit();
+    assert!(collectors_item.status_without_gui().is_empty());
 }
 
 #[test]
 fn explicit_board_defaults_start_compiled_modules_but_do_not_sample_in_constructor() {
-    let mut c = Collectors::default();
-    c.enable_defaults();
+    let mut collectors_item = Collectors::default();
+    collectors_item.enable_defaults();
     for command in Collectors::capabilities()
         .into_iter()
-        .filter(|s| s.ends_with(".report"))
+        .filter(|sample| sample.ends_with(".report"))
     {
-        let report = c.command(command).unwrap();
+        let report = collectors_item.command(command).unwrap();
         assert_eq!(
             report
                 .get("samples")
@@ -60,7 +60,7 @@ fn explicit_board_defaults_start_compiled_modules_but_do_not_sample_in_construct
         );
         assert_eq!(report["stopped"], false);
     }
-    assert!(c.command("diag_unknown.start").is_err());
+    assert!(collectors_item.command("diag_unknown.start").is_err());
 }
 
 #[test]

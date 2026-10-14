@@ -43,6 +43,7 @@ pub(crate) struct ChildLog {
 }
 
 impl ChildLog {
+    /// Attach a bounded child-output socket to a command without starting the process.
     pub(crate) fn attach(command: &mut Command, keep_tail: bool) -> io::Result<Self> {
         let (reader, writer) = UnixStream::pair()?;
         reader.set_nonblocking(true)?;
@@ -63,6 +64,7 @@ impl ChildLog {
         })
     }
 
+    /// Associate child output with its PID and optional session-relative timeline.
     pub(crate) fn observe(&mut self, pid: u32, _started: Option<Instant>, _clock: &'static str) {
         self.pid = Some(pid);
         #[cfg(feature = "diag-cycle")]
@@ -71,6 +73,7 @@ impl ChildLog {
         }); }
     }
 
+    /// Drain available child output within read and retention budgets without blocking.
     pub(crate) fn poll(&mut self) {
         if self.error.is_some() {
             return;
@@ -112,6 +115,7 @@ impl ChildLog {
         }
     }
 
+    /// Perform a bounded final drain and return retained output plus read statistics.
     pub(crate) fn report(mut self) -> (Vec<u8>, serde_json::Value) {
         // Bounded final drain: descendants holding the socket must not hang cleanup.
         for _ in 0..4 {
@@ -148,7 +152,7 @@ impl ChildLog {
 pub(crate) fn finish_gui(log: ChildLog, _control: Option<&mut crate::session::control::Control>) {
     let (bytes, metadata) = log.report();
     #[cfg(feature = "diag-cycle")]
-    if let Some(segment) = _control.and_then(|c| c.cycle_segment()) {
+    if let Some(segment) = _control.and_then(|control_item| control_item.cycle_segment()) {
         segment.gui_output = metadata.clone();
     }
     crate::session::diagnostic(format_args!("iman: IGUI output received={}, omitted={}, drain_complete={}, error={}\n{}",

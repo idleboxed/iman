@@ -204,6 +204,7 @@ fn serialize_json(value: &Value) -> Vec<u8> {
     bytes
 }
 
+/// Build candidate mappings from coherent evidence without applying files or claiming physical-label verification.
 pub fn generate(participants: &[Participant<'_>]) -> Proposals {
     let mut output = Proposals { summary: json!({"candidate_only":true,"applied":false,
         "physical_labels_verified":false,"port_assignment":false,"groups":[],"rejected":[],

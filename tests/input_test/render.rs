@@ -169,9 +169,9 @@ fn changing_steps_and_release_prompts_never_repaints_the_static_controller_headi
 fn resize_multiline_input_and_explicit_reset_rebuild_the_whole_frame() {
     let mut screen = Screen::default();
     let mut view = InputTest::default().view(0);
-    for (w, h) in [(1280, 720), (1024, 600), (1280, 720)] {
-        let mut actual = Surface::new(w, h);
-        let mut expected = Surface::new(w, h);
+    for (width, height) in [(1280, 720), (1024, 600), (1280, 720)] {
+        let mut actual = Surface::new(width, height);
+        let mut expected = Surface::new(width, height);
         assert_eq!(screen.update(&mut actual, &view).unwrap(), Redraw::Full);
         view.notice = "first line\nsecond line".into();
         assert_eq!(screen.update(&mut actual, &view).unwrap(), Redraw::Full);

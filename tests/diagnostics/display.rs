@@ -19,65 +19,65 @@ fn gui() -> Sample {
 
 #[test]
 fn requested_gui_reports_have_manager_times_and_reject_duplicates_wrong_pid_and_invalid_data() {
-    let mut m = Monitor::default();
-    assert!(m.submit_gui(5, 1, gui()).is_err());
-    m.begin_gui(5, 10);
-    assert!(m.submit_gui(6, 20, gui()).is_err());
+    let mut monitor = Monitor::default();
+    assert!(monitor.submit_gui(5, 1, gui()).is_err());
+    monitor.begin_gui(5, 10);
+    assert!(monitor.submit_gui(6, 20, gui()).is_err());
     let mut invalid = gui();
     invalid.backend = Backend::Drm;
-    assert!(m.submit_gui(5, 20, invalid).is_err());
-    assert!(m.submit_gui(5, 9, gui()).is_err());
+    assert!(monitor.submit_gui(5, 20, invalid).is_err());
+    assert!(monitor.submit_gui(5, 9, gui()).is_err());
 
-    m.submit_gui(5, 20, gui()).unwrap();
-    assert!(m.submit_gui(5, 21, gui()).is_err());
-    m.end_gui();
+    monitor.submit_gui(5, 20, gui()).unwrap();
+    assert!(monitor.submit_gui(5, 21, gui()).is_err());
+    monitor.end_gui();
 
-    let r = m.report();
-    assert_eq!(r.received, 1);
-    assert_eq!(r.rejected, 5);
-    assert_eq!(r.missing, 0);
-    assert_eq!((r.history[0].begin_ms, r.history[0].end_ms), (10, 20));
+    let report_item = monitor.report();
+    assert_eq!(report_item.received, 1);
+    assert_eq!(report_item.rejected, 5);
+    assert_eq!(report_item.missing, 0);
+    assert_eq!((report_item.history[0].begin_ms, report_item.history[0].end_ms), (10, 20));
 }
 
 #[test]
 fn missing_reports_are_explicit_and_stopping_does_not_accept_late_data() {
-    let mut m = Monitor::default();
-    m.begin_gui(1, 1);
-    m.end_gui();
-    m.begin_gui(2, 2);
-    m.stop();
-    m.stop();
+    let mut monitor = Monitor::default();
+    monitor.begin_gui(1, 1);
+    monitor.end_gui();
+    monitor.begin_gui(2, 2);
+    monitor.stop();
+    monitor.stop();
 
-    assert_eq!(m.report().missing, 2);
-    assert!(m.report().stopped);
-    assert!(m.submit_gui(2, 3, gui()).is_err());
-    assert!(m.record(2, 2, 3, "gui", gui()).is_err());
+    assert_eq!(monitor.report().missing, 2);
+    assert!(monitor.report().stopped);
+    assert!(monitor.submit_gui(2, 3, gui()).is_err());
+    assert!(monitor.record(2, 2, 3, "gui", gui()).is_err());
 }
 
 #[test]
 fn history_and_json_are_bounded_without_changing_live_totals() {
-    let mut m = Monitor::default();
-    for i in 1..=24 {
-        let mut s = gui();
-        s.render.as_mut().unwrap().render_us_sum = u64::MAX.into();
-        m.record(1, i - 1, i, "gui", s).unwrap();
+    let mut monitor = Monitor::default();
+    for index in 1..=24 {
+        let mut sample_item = gui();
+        sample_item.render.as_mut().unwrap().render_us_sum = u64::MAX.into();
+        monitor.record(1, index - 1, index, "gui", sample_item).unwrap();
     }
-    assert_eq!(m.report().history.len(), HISTORY_LIMIT);
-    assert_eq!(m.report().history_dropped, 16);
-    let text = m.report_json().unwrap();
+    assert_eq!(monitor.report().history.len(), HISTORY_LIMIT);
+    assert_eq!(monitor.report().history_dropped, 16);
+    let text = monitor.report_json().unwrap();
     assert!(text.len() <= REPORT_LIMIT);
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(json["received"], 24);
     assert_eq!(json["clock"], "iman_session");
-    assert_eq!(m.report().history.len(), HISTORY_LIMIT);
-    assert!(m.record(1, 0, 1, "gui", gui()).is_err());
-    assert!(m.record(1, 24, 25, "invalid phase", gui()).is_err());
+    assert_eq!(monitor.report().history.len(), HISTORY_LIMIT);
+    assert!(monitor.record(1, 0, 1, "gui", gui()).is_err());
+    assert!(monitor.record(1, 24, 25, "invalid phase", gui()).is_err());
 }
 
 #[test]
 fn active_probe_measurements_have_an_explicit_separate_clock_and_partial_status() {
-    let mut m = Monitor::with_clock(Clock::ProbeSession);
-    let s = Sample {
+    let mut monitor = Monitor::with_clock(Clock::ProbeSession);
+    let sample_item = Sample {
         backend: Backend::KmsProbe,
         probe: Some(Summary::default()),
         render: None,
@@ -85,10 +85,10 @@ fn active_probe_measurements_have_an_explicit_separate_clock_and_partial_status(
         cleanup_ok: None,
         ..gui()
     };
-    m.record(7, 10, 30, "copy", s).unwrap();
-    m.stop();
+    monitor.record(7, 10, 30, "copy", sample_item).unwrap();
+    monitor.stop();
 
-    let json: serde_json::Value = serde_json::from_str(&m.report_json().unwrap()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&monitor.report_json().unwrap()).unwrap();
     assert_eq!(json["clock"], "probe_session");
     assert_eq!(json["history"][0]["data"]["operation_ok"], false);
     assert!(json["history"][0]["data"]["cleanup_ok"].is_null());
@@ -160,11 +160,11 @@ fn ownership_failure_and_cleanup_result_are_separate_from_present_timings() {
 fn sourced_histories_share_the_json_budget_but_never_merge_counters_or_mutate_live_reports() {
     let mut child = Monitor::default();
     let mut manager = Monitor::default();
-    for i in 1..=16 {
-        child.record(42, i - 1, i, "gui", gui()).unwrap();
-        let mut m = Measurements::default();
-        m.render(Duration::from_micros(123), false);
-        manager.record(7, i - 1, i, "gui_diagnostics", m.finish(kms(), None).1).unwrap();
+    for index in 1..=16 {
+        child.record(42, index - 1, index, "gui", gui()).unwrap();
+        let mut monitor = Measurements::default();
+        monitor.render(Duration::from_micros(123), false);
+        manager.record(7, index - 1, index, "gui_diagnostics", monitor.finish(kms(), None).1).unwrap();
     }
 
     let text = report_json(&child, &manager).unwrap();
@@ -234,9 +234,9 @@ fn session_collects_own_phases_and_cleanup_but_disables_measurements_while_lent(
             Some(std::mem::take(self.measurements.as_mut()?).finish(kms(), self.cleanup))
         }
         fn starting_gui(&mut self) -> io::Result<()> {
-            if let Some(m) = &mut self.measurements {
-                m.render(Duration::from_micros(2), false);
-                m.present(Duration::from_micros(3), true);
+            if let Some(monitor) = &mut self.measurements {
+                monitor.render(Duration::from_micros(2), false);
+                monitor.present(Duration::from_micros(3), true);
             }
             Ok(())
         }

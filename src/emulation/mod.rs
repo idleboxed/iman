@@ -25,6 +25,7 @@ impl Value {
         }
     }
 
+    /// Reject text configuration values that exceed limits or contain forbidden characters.
     pub(crate) fn validate(&self) -> io::Result<()> {
         if let Self::Text(value) = self {
             if value.len() > 16 * 1024
@@ -42,6 +43,7 @@ impl Value {
 #[derive(Clone, Debug)]
 pub struct Settings(BTreeMap<String, Value>);
 
+/// Decode a settings object while rejecting duplicate keys.
 pub(crate) fn deserialize_parameters<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<BTreeMap<String, Value>, D::Error> {
@@ -66,6 +68,7 @@ pub(crate) fn deserialize_parameters<'de, D: serde::Deserializer<'de>>(
     deserializer.deserialize_map(Visitor)
 }
 
+/// Validate one setting name and value and encode its configuration line.
 pub(crate) fn setting_line(key: &str, value: &Value, axis_suffix: bool) -> io::Result<String> {
     let name = if axis_suffix { key.trim_end_matches(['+', '-']) } else { key };
     if name.is_empty()
@@ -88,10 +91,12 @@ impl<'de> Deserialize<'de> for Settings {
 }
 
 impl Settings {
+    /// Serialize validated RetroArch settings without a managed remap.
     pub fn config(&self) -> io::Result<String> {
         self.config_with_remap(false, &[])
     }
 
+    /// Serialize settings while applying managed remap and reserved-key rules.
     pub(crate) fn config_with_remap(&self, remap: bool, managed_keys: &[&str]) -> io::Result<String> {
         let mut config = String::new();
         for (key, value) in &self.0 {
@@ -121,6 +126,7 @@ impl Settings {
         Ok(config)
     }
 
+    /// Borrow the explicitly configured video-context driver, if it is a text value.
     pub fn video_context_driver(&self) -> Option<&str> {
         match self.0.get("video_context_driver") {
             Some(Value::Text(value)) => Some(value),

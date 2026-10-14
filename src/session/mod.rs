@@ -66,6 +66,7 @@ fn safe_stderr(allow_ram_file: bool) -> bool {
     }
 }
 
+/// Duplicate a safe diagnostic console FD without falling back to an arbitrary regular file.
 pub(crate) fn diagnostic_console() -> Option<fs::File> {
     use std::os::fd::FromRawFd;
     if !safe_stderr(false) { return None; }
@@ -73,6 +74,7 @@ pub(crate) fn diagnostic_console() -> Option<fs::File> {
     if fd < 0 { None } else { Some(unsafe { fs::File::from_raw_fd(fd) }) }
 }
 
+/// Select the retained diagnostic console while RAM owns normal session output.
 pub(crate) fn set_diagnostic_console(console: Option<fs::File>) {
     RAM_OUTPUT_ACTIVE.store(true, Ordering::Relaxed);
     if let Ok(mut target) = DIAGNOSTIC_CONSOLE.lock() { *target = console; }
@@ -98,6 +100,7 @@ impl Drop for ChildGuard {
     }
 }
 
+/// Configure child-death signaling before spawn without doing unsafe allocations after fork.
 pub(crate) fn prepare_child(command: &mut Command) {
     let parent = std::process::id();
     // SAFETY: pre_exec uses only async-signal-safe syscalls, without allocation.
@@ -143,6 +146,7 @@ pub(crate) fn restore_file_limit(command: &mut Command) {
     }
 }
 
+/// Poll and reap one child while observing its phase and honoring session cancellation.
 pub(crate) fn wait(
     child: &mut Child,
     observer: &mut dyn FnMut(&'static str),
@@ -183,6 +187,7 @@ pub fn runtime_directory(parent: &Path) -> io::Result<TempDir> {
     Ok(dir)
 }
 
+/// Poll IPC and reap the current GUI while retaining only a validated handoff.
 pub(crate) fn wait_gui(
     child: &mut Child,
     control: &mut Control,
@@ -316,10 +321,10 @@ fn run_game(
                     monitor,
                     child.0.id(),
                 )),
-                Err(e) => {
-                    diagnostic(format_args!("IMAN perf unavailable: {e}"));
+                Err(error_item) => {
+                    diagnostic(format_args!("IMAN perf unavailable: {error_item}"));
                     if let Some(segment) = control.cycle_segment() {
-                        segment.performance = Some(serde_json::json!({"state":"unavailable","error":e.to_string()}));
+                        segment.performance = Some(serde_json::json!({"state":"unavailable","error":error_item.to_string()}));
                     }
                     None
                 }
@@ -358,10 +363,10 @@ fn run_game(
                         "session_begin_ms":begin_ms, "data":serde_json::from_str::<serde_json::Value>(&json)?}));
                 }
             }
-            Err(e) => {
-                diagnostic(format_args!("IMAN perf report failed: {e}"));
+            Err(error_item) => {
+                diagnostic(format_args!("IMAN perf report failed: {error_item}"));
                 if let Some(segment) = control.cycle_segment() {
-                    segment.performance = Some(serde_json::json!({"state":"failed","error":e.to_string()}));
+                    segment.performance = Some(serde_json::json!({"state":"failed","error":error_item.to_string()}));
                 }
             }
         }
@@ -413,6 +418,7 @@ fn run_game(
     Ok(status)
 }
 
+/// Run the GUI session from a checked installation root with default observation.
 pub fn run(root: &Path, gui_args: &[OsString]) -> io::Result<()> {
     run_observed(root, gui_args, &mut |_| {})
 }
@@ -429,6 +435,7 @@ pub fn run_observed(
     run_controlled(&root, gui_args, &mut control, observer)
 }
 
+/// Run the session with caller-owned control state and explicit GUI arguments.
 pub fn run_controlled(
     root: &Path,
     gui_args: &[OsString],
@@ -471,6 +478,7 @@ pub fn run_controlled_with_display(
     )
 }
 
+/// Run the session using a validated profile and caller-owned control state.
 pub fn run_configured(
     root: &Path,
     profile: &crate::profile::Profile,
@@ -702,7 +710,7 @@ pub fn run_session_with_timing(
     let dump_status = present_memory_dump_on_exit(control, display, timing, display_available, result.is_ok());
     #[cfg(not(feature = "diag-memdump"))]
     let dump_status: io::Result<()> = Ok(());
-    let final_export = if result.as_ref().is_err_and(|e| e.kind() == io::ErrorKind::Interrupted) {
+    let final_export = if result.as_ref().is_err_and(|error_item| error_item.kind() == io::ErrorKind::Interrupted) {
         Ok(())
     } else if control.cycle_enabled() {
         control.poll("session_end");

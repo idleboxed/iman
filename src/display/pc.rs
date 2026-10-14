@@ -9,9 +9,13 @@ use super::{gui_error_message, splash, Lease};
 
 /// Window operations are replaceable in offline lifecycle tests.
 pub trait WindowBackend {
+    /// Open a desktop window with the requested frame dimensions.
     fn open(&mut self, width: usize, height: usize) -> io::Result<()>;
+    /// Present the prepared pixel buffer to the open window.
     fn present(&mut self, pixels: &[u32], width: usize, height: usize) -> io::Result<()>;
+    /// Process window events without uploading an unchanged frame.
     fn poll_events(&mut self) -> io::Result<()>;
+    /// Release the desktop window owned by this backend.
     fn close(&mut self);
 }
 
@@ -66,6 +70,7 @@ pub struct WindowDisplay<B: WindowBackend> {
 }
 
 impl<B: WindowBackend> WindowDisplay<B> {
+    /// Open the manager's desktop display with optional observation enabled.
     pub fn open(mut backend: B, observe: bool) -> io::Result<Self> {
         backend.open(splash::WIDTH as usize, splash::HEIGHT as usize)?;
         let mut display = Self {
@@ -96,16 +101,16 @@ impl<B: WindowBackend> WindowDisplay<B> {
         let redraw = draw(frame);
         if redraw == splash::Redraw::Unchanged { return Ok(()); }
         #[cfg(feature = "diag-display")]
-        if let Some((m, began)) = self.measurements.as_mut().zip(began) {
-            if redraw == splash::Redraw::Partial { m.render_partial(began.elapsed()); }
-            else { m.render(began.elapsed(), _footer); }
+        if let Some((message_item, began)) = self.measurements.as_mut().zip(began) {
+            if redraw == splash::Redraw::Partial { message_item.render_partial(began.elapsed()); }
+            else { message_item.render(began.elapsed(), _footer); }
         }
         #[cfg(feature = "diag-display")]
         let began = self.measurements.as_ref().map(|_| Instant::now());
         let result = self.backend.present(frame.pixels(), frame.width() as usize, frame.height() as usize);
         #[cfg(feature = "diag-display")]
-        if let Some((m, began)) = self.measurements.as_mut().zip(began) {
-            m.present(began.elapsed(), result.is_ok());
+        if let Some((message_item, began)) = self.measurements.as_mut().zip(began) {
+            message_item.present(began.elapsed(), result.is_ok());
         }
         result
     }
@@ -132,7 +137,7 @@ impl<B: WindowBackend> Lease for WindowDisplay<B> {
 
     #[cfg(feature = "diag-display")]
     fn diagnostics_status(&self) -> Option<String> {
-        self.measurements.as_ref().map(|m| m.status(None))
+        self.measurements.as_ref().map(|message_item| message_item.status(None))
     }
 
     fn starting_gui(&mut self) -> io::Result<()> {

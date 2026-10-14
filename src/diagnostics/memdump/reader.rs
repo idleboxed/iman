@@ -29,13 +29,17 @@ pub struct Capture {
 
 /// Test implementations supply synthetic bytes without acquiring a device.
 pub trait Reader {
+    /// Return the capture method label recorded in the report.
     fn method(&self) -> &'static str { "provided_reader" }
+    /// Perform the explicitly approved read plan and return captured bytes plus any partial-read details.
     fn read(&self, plan: &ReadPlan) -> io::Result<Capture>;
 }
 
 pub struct LinuxReader { device: PathBuf }
 impl LinuxReader {
+    /// Describe a physical-memory device path without opening or reading it.
     pub fn new(device: PathBuf) -> Self { Self { device } }
+    /// Select /dev/mem for later explicitly guarded read operations.
     pub fn system() -> Self { Self::new("/dev/mem".into()) }
 
     fn open_device(&self) -> io::Result<File> {

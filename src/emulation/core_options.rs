@@ -27,6 +27,7 @@ impl<'de> Deserialize<'de> for CoreOptions {
 }
 
 impl CoreOptions {
+    /// Validate core-option names and values and serialize their RetroArch configuration.
     pub fn config(&self) -> io::Result<String> {
         if self.0.len() > OPTION_LIMIT {
             return Err(io::Error::other("too many core options"));

@@ -37,8 +37,8 @@ impl Retained {
             let started = self.measurements.as_ref().map(|_| Instant::now());
             let presented = self.owner.present(frame);
             #[cfg(feature = "diag-display")]
-            if let Some((m, started)) = self.measurements.as_mut().zip(started) {
-                m.present(started.elapsed(), presented.is_ok());
+            if let Some((message_item, started)) = self.measurements.as_mut().zip(started) {
+                message_item.present(started.elapsed(), presented.is_ok());
             }
             presented?;
             let current = self.owner.with_backend(|backend| backend.snapshot())?;
@@ -48,8 +48,8 @@ impl Retained {
         })();
         #[cfg(feature = "diag-display")]
         if result.is_err() {
-            if let Some(m) = &mut self.measurements {
-                m.failed();
+            if let Some(message_item) = &mut self.measurements {
+                message_item.failed();
             }
         }
         result
@@ -65,8 +65,8 @@ impl Retained {
             .unwrap_or_else(|| Surface::new(splash::WIDTH, splash::HEIGHT));
         splash::draw(&mut frame, message, error).unwrap();
         #[cfg(feature = "diag-display")]
-        if let Some((m, started)) = self.measurements.as_mut().zip(started) {
-            m.render(started.elapsed(), false);
+        if let Some((message_item, started)) = self.measurements.as_mut().zip(started) {
+            message_item.render(started.elapsed(), false);
         }
         frame
     }
@@ -92,7 +92,7 @@ impl Lease for Retained {
     #[cfg(feature = "diag-display")]
     fn diagnostics_status(&self) -> Option<String> {
         let kms = self.owner.backend().diagnostic_state(self.owner.master_acquired())?;
-        self.measurements.as_ref().map(|m| m.status(Some(&kms)))
+        self.measurements.as_ref().map(|message_item| message_item.status(Some(&kms)))
     }
 
     fn starting_gui(&mut self) -> io::Result<()> {
@@ -160,9 +160,9 @@ impl Lease for Retained {
         let redraw = self.input_screen.update(&mut frame, view).unwrap();
         if redraw != super::Redraw::Unchanged {
             #[cfg(feature = "diag-display")]
-            if let Some((m, started)) = self.measurements.as_mut().zip(started) {
-                if redraw == super::Redraw::Partial { m.render_partial(started.elapsed()); }
-                else { m.render(started.elapsed(), false); }
+            if let Some((message_item, started)) = self.measurements.as_mut().zip(started) {
+                if redraw == super::Redraw::Partial { message_item.render_partial(started.elapsed()); }
+                else { message_item.render(started.elapsed(), false); }
             }
             self.present(&frame)?;
         }
@@ -214,9 +214,9 @@ impl Lease for Retained {
             return Ok(());
         }
         #[cfg(feature = "diag-display")]
-        if let Some((m, started)) = self.measurements.as_mut().zip(started) {
-            if redraw == splash::Redraw::Partial { m.render_partial(started.elapsed()); }
-            else { m.render(started.elapsed(), false); }
+        if let Some((message_item, started)) = self.measurements.as_mut().zip(started) {
+            if redraw == splash::Redraw::Partial { message_item.render_partial(started.elapsed()); }
+            else { message_item.render(started.elapsed(), false); }
         }
         self.present(&frame)?;
         self.error_frame = Some((frame, error, failed));
@@ -237,8 +237,8 @@ impl Lease for Retained {
         }
         splash::countdown(&mut frame, remaining).unwrap();
         #[cfg(feature = "diag-display")]
-        if let Some((m, started)) = self.measurements.as_mut().zip(started) {
-            m.render(started.elapsed(), remaining != 10);
+        if let Some((message_item, started)) = self.measurements.as_mut().zip(started) {
+            message_item.render(started.elapsed(), remaining != 10);
         }
         self.present(&frame)?;
         self.error_frame = Some((frame, error, failed));
@@ -246,6 +246,7 @@ impl Lease for Retained {
     }
 }
 
+/// Open the selected manager display, applying the emulator's video-context requirements.
 pub(super) fn open(
     display: &Display,
     video_context: Option<Option<&str>>,
@@ -271,9 +272,9 @@ pub(super) fn open(
         for entry in fs::read_dir("/dev/dri")? {
             let entry = entry?;
             let name = entry.file_name();
-            if name.to_str().is_some_and(|n| {
-                n.strip_prefix("card")
-                    .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            if name.to_str().is_some_and(|notice| {
+                notice.strip_prefix("card")
+                    .is_some_and(|notice| !notice.is_empty() && notice.bytes().all(|bootstrap| bootstrap.is_ascii_digit()))
             }) {
                 cards.push(entry.path());
             }
@@ -294,8 +295,8 @@ pub(super) fn open(
     let started = measurements.as_ref().map(|_| Instant::now());
     let frame = splash::frame(splash::INITIALIZING, false);
     #[cfg(feature = "diag-display")]
-    if let Some((m, started)) = measurements.as_mut().zip(started) {
-        m.render(started.elapsed(), false);
+    if let Some((message_item, started)) = measurements.as_mut().zip(started) {
+        message_item.render(started.elapsed(), false);
     }
     let owner = Owner::start(backend, &frame, *allow_vendor_einval)?;
     drop(frame);
@@ -304,8 +305,8 @@ pub(super) fn open(
     let monitor = baseline
         .connectors
         .iter()
-        .filter(|c| c.connected && !c.modes.is_empty())
-        .position(|c| c.id == output.connector)
+        .filter(|character| character.connected && !character.modes.is_empty())
+        .position(|character| character.id == output.connector)
         .ok_or_else(|| io::Error::other("manager connector has no RetroArch monitor index"))?
         as u32
         + 1;

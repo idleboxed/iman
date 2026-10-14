@@ -16,6 +16,7 @@ pub fn snapshot(input: &Path, input_sysfs: &Path, usb_sysfs: &Path, profiles: &[
     snapshot_with_conflicts(input, input_sysfs, usb_sysfs, profiles, &[])
 }
 
+/// Read a bounded input and USB inventory, including profile conflicts and read errors.
 pub fn snapshot_with_conflicts(input: &Path, input_sysfs: &Path, usb_sysfs: &Path, profiles: &[Profile], conflicts: &[Conflict]) -> Value {
     let usb = usb_inventory(usb_sysfs).unwrap_or_else(|error| {
         json!({"devices":[], "error":error.to_string().chars().take(160).collect::<String>()})

@@ -16,6 +16,7 @@ impl Journal {
         self.proposal_files.clear();
     }
 
+    /// Retain the completed controller report and its unapplied proposal files.
     pub fn complete_with_proposals(&mut self, completion: crate::input_test::Completion) {
         self.complete_manager(completion.report);
         self.proposal_files = completion.files;
@@ -26,6 +27,7 @@ impl Journal {
         &self.proposal_files
     }
 
+    /// Copy the completed manager report, or return null before completion.
     pub fn report(&self) -> Value {
         self.manager.clone().unwrap_or(Value::Null)
     }

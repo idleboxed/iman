@@ -24,10 +24,12 @@ impl<'de> Deserialize<'de> for Remap {
 }
 
 impl Remap {
+    /// Report whether no explicit remapping settings were supplied.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Validate and serialize the requested RetroArch remapping settings.
     pub fn config(&self) -> io::Result<String> {
         let mut config = String::new();
         for (key, value) in &self.0 {
@@ -44,6 +46,7 @@ pub struct Profile {
 }
 
 impl Profile {
+    /// Prepare remap data under a checked single-component core library name.
     pub fn new(library_name: &str, remap: &Remap) -> io::Result<Self> {
         // RetroArch appends the core's reported name to its remap directory.
         // Keep that name a single path component, not a path supplied by JSON.
@@ -51,7 +54,7 @@ impl Profile {
             || library_name.len() > 128
             || matches!(library_name, "." | "..")
             || library_name.trim() != library_name
-            || library_name.chars().any(|c| c.is_control() || matches!(c, '/' | '\\' | '"'))
+            || library_name.chars().any(|control| control.is_control() || matches!(control, '/' | '\\' | '"'))
         {
             return Err(io::Error::other("invalid remap library_name"));
         }

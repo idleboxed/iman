@@ -38,6 +38,7 @@ pub fn prepare_runtime(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Require a held tmpfs with at least one MiB available before creating session resources.
 pub(crate) fn ram_space(fd: &File) -> io::Result<()> {
     let info = read_filesystem(fd)?;
     if !info.is_tmpfs || info.available_bytes < 1024 * 1024 {
@@ -137,6 +138,7 @@ impl RamLog {
             file: above_stdio(unsafe { File::from_raw_fd(fd) })?, directory })
     }
 
+    /// Write a session journal entry, propagating output failures.
     pub fn record(&mut self, text: &str) -> io::Result<()> {
         self.file.write_all(text.as_bytes())
     }

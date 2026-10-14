@@ -62,10 +62,14 @@ impl Monitor {
             selection: None, bytes: Vec::new(), platform: Box::new(platform), reader: Box::new(reader),
         }
     }
+    /// Borrow memory-dump preparation and capture state; captured data is not export confirmation.
     pub fn report(&self) -> &Report { &self.report }
+    /// Borrow captured bytes retained in RAM, including any reported partial capture.
     pub fn bytes(&self) -> &[u8] { &self.bytes }
+    /// Report whether one enabled, validated profile is ready for an explicit capture attempt.
     pub fn is_ready(&self) -> bool { self.report.state == State::Ready }
 
+    /// Skip an unstarted capture and retain a bounded reason without performing a read.
     pub fn skip(&mut self, reason: &str) {
         if matches!(self.report.state, State::Unprepared | State::Ready) {
             self.report.state = State::Skipped;
@@ -124,6 +128,7 @@ impl Monitor {
         }
     }
 
+    /// Format the current preparation or capture state for the status line.
     pub fn status(&self) -> String {
         let profile = self.report.profile.as_deref().unwrap_or("none");
         match self.report.state {
@@ -137,6 +142,7 @@ impl Monitor {
         }
     }
 
+    /// Format the read announcement that must be presented before capture begins.
     pub fn start_status(&self) -> String {
         format!("Memory dump: reading, profile {}, {} bytes",
             self.report.profile.as_deref().unwrap_or("none"), self.report.plan.map_or(0, |plan| plan.length))

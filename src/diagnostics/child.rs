@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::{collections::VecDeque, io};
 
 pub trait Payload: Clone + Serialize {
+    /// Report whether a child-supplied payload satisfies the diagnostic contract.
     fn valid(&self) -> bool;
 }
 
@@ -62,21 +63,25 @@ impl<T: Payload> Default for Monitor<T> {
     }
 }
 impl<T: Payload> Monitor<T> {
+    /// Create empty child-report state labeled with the supplied diagnostic clock.
     pub fn with_clock(clock: Clock) -> Self {
         let mut monitor = Self::default();
         monitor.report.clock = clock;
         monitor
     }
+    /// Borrow the accumulated bounded child-report history.
     pub fn report(&self) -> &Report<T> {
         &self.report
     }
 
+    /// Authorize one GUI PID to submit a report for the new child interval.
     pub fn begin_gui(&mut self, pid: u32, ms: u64) {
         self.end_gui();
         if !self.report.stopped && pid != 0 {
             self.expected = Some((pid, ms, false));
         }
     }
+    /// End report authorization for the current GUI, recording a missing report when needed.
     pub fn end_gui(&mut self) {
         if self
             .expected
@@ -86,6 +91,7 @@ impl<T: Payload> Monitor<T> {
             self.report.missing += 1;
         }
     }
+    /// Validate and retain one report from the authorized GUI PID.
     pub fn submit_gui(&mut self, pid: u32, ms: u64, data: T) -> io::Result<()> {
         let Some((expected, begin, false)) = self.expected else {
             self.report.rejected += 1;
@@ -118,9 +124,9 @@ impl<T: Payload> Monitor<T> {
             && phase.len() <= 32
             && phase
                 .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                .all(|child_log| child_log.is_ascii_alphanumeric() || child_log == b'_')
             && data.valid()
-            && serde_json::to_vec(&data).is_ok_and(|v| v.len() <= SAMPLE_LIMIT);
+            && serde_json::to_vec(&data).is_ok_and(|value| value.len() <= SAMPLE_LIMIT);
         if !valid {
             self.report.rejected += 1;
             return Err(io::Error::other(
@@ -142,10 +148,12 @@ impl<T: Payload> Monitor<T> {
         });
         Ok(())
     }
+    /// End GUI authorization and permanently stop accepting new samples.
     pub fn stop(&mut self) {
         self.end_gui();
         self.report.stopped = true;
     }
+    /// Encode a bounded report, dropping oldest retained history if necessary.
     pub fn report_json(&self) -> io::Result<String> {
         let mut report = self.report.clone();
         loop {

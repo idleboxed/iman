@@ -36,11 +36,11 @@ fn fixture() -> (tempfile::TempDir, Source) {
 #[test]
 fn mount_context_selects_the_actual_containing_device_and_decodes_escapes() {
     let text = "1 0 8:1 / /card rw - exfat test rw\n2 1 8:1 / /card/a\\040b ro,noatime - exfat test ro\n3 0 9:1 / /card/a\\040b/nested rw - ext4 other rw\n";
-    let m = parse_mountinfo(text, Path::new("/card/a b/game"), libc::makedev(8, 1)).unwrap();
-    assert_eq!(m.mount_point, "/card/a b");
-    assert_eq!(m.mount_options, "ro,noatime");
-    assert_eq!(m.super_options, "ro");
-    assert_eq!(m.filesystem, "exfat");
+    let monitor = parse_mountinfo(text, Path::new("/card/a b/game"), libc::makedev(8, 1)).unwrap();
+    assert_eq!(monitor.mount_point, "/card/a b");
+    assert_eq!(monitor.mount_options, "ro,noatime");
+    assert_eq!(monitor.super_options, "ro");
+    assert_eq!(monitor.filesystem, "exfat");
     assert!(parse_mountinfo(text, Path::new("/card-other"), libc::makedev(8, 1)).is_err());
     assert!(parse_mountinfo(text, Path::new("/card"), libc::makedev(99, 1)).is_err());
 }
@@ -85,28 +85,28 @@ fn reused_disappearing_or_wrong_process_is_not_attributed_to_the_old_child() {
 #[test]
 fn construction_is_passive_and_polling_is_bounded_throttled_and_recovers() {
     let (dir, source) = fixture();
-    let mut m = Monitor::new(source);
-    assert!(m.report().environment.is_none());
-    assert_eq!(m.report().samples, 0);
-    m.poll(0, "gui", 41, Some(42));
-    assert_eq!(m.report().read_errors, 0);
-    assert_eq!(m.report().history[0].memory.value.as_ref().unwrap().dirty_bytes, Some(2048));
+    let mut monitor = Monitor::new(source);
+    assert!(monitor.report().environment.is_none());
+    assert_eq!(monitor.report().samples, 0);
+    monitor.poll(0, "gui", 41, Some(42));
+    assert_eq!(monitor.report().read_errors, 0);
+    assert_eq!(monitor.report().history[0].memory.value.as_ref().unwrap().dirty_bytes, Some(2048));
     fs::remove_file(dir.path().join("proc/42/io")).unwrap();
-    m.poll(1, "game", 41, Some(42));
-    assert_eq!(m.report().samples, 1);
-    m.poll(INTERVAL_MS, "game", 41, Some(42));
-    assert_eq!(m.report().read_errors, 1);
-    assert!(m.report().history.back().unwrap().child.as_ref().unwrap().value.is_none());
+    monitor.poll(1, "game", 41, Some(42));
+    assert_eq!(monitor.report().samples, 1);
+    monitor.poll(INTERVAL_MS, "game", 41, Some(42));
+    assert_eq!(monitor.report().read_errors, 1);
+    assert!(monitor.report().history.back().unwrap().child.as_ref().unwrap().value.is_none());
     write(&dir.path().join("proc/42/io"), "write_bytes: 17\n");
-    for n in 2..100 { m.poll(n * INTERVAL_MS, "game", 41, Some(42)); }
-    assert_eq!(m.report().samples, 100);
-    assert_eq!(m.report().read_errors, 1);
-    assert_eq!(m.report().environment.as_ref().unwrap().ms, 0);
-    assert_eq!(m.report().history.len(), HISTORY_LIMIT);
-    assert_eq!(m.report().history_dropped, 100 - HISTORY_LIMIT as u64);
-    assert!(m.report_json().unwrap().len() <= REPORT_LIMIT);
-    m.stop(); m.poll(999_999, "game", 41, Some(42));
-    assert_eq!(m.report().samples, 100);
+    for count in 2..100 { monitor.poll(count * INTERVAL_MS, "game", 41, Some(42)); }
+    assert_eq!(monitor.report().samples, 100);
+    assert_eq!(monitor.report().read_errors, 1);
+    assert_eq!(monitor.report().environment.as_ref().unwrap().ms, 0);
+    assert_eq!(monitor.report().history.len(), HISTORY_LIMIT);
+    assert_eq!(monitor.report().history_dropped, 100 - HISTORY_LIMIT as u64);
+    assert!(monitor.report_json().unwrap().len() <= REPORT_LIMIT);
+    monitor.stop(); monitor.poll(999_999, "game", 41, Some(42));
+    assert_eq!(monitor.report().samples, 100);
 }
 
 #[test]
@@ -115,17 +115,17 @@ fn missing_optional_sources_do_not_stop_other_observation_or_become_zero() {
     fs::remove_file(dir.path().join("proc/sys/vm/dirty_bytes")).unwrap();
     write(&dir.path().join("proc/meminfo"), "MemTotal: 100 kB\n");
     fs::remove_file(dir.path().join("proc/self/mountinfo")).unwrap();
-    let mut m = Monitor::new(source);
-    m.poll(100, "gui", 41, None);
+    let mut monitor = Monitor::new(source);
+    monitor.poll(100, "gui", 41, None);
 
-    let r = m.report();
-    assert_eq!(r.read_errors, 2);
-    assert!(!r.stopped);
-    assert!(r.environment.as_ref().unwrap().mount.value.is_none());
-    assert!(r.environment.as_ref().unwrap().writeback["dirty_bytes"].value.is_none());
-    assert_eq!(r.history[0].memory.value.as_ref().unwrap().dirty_bytes, None);
-    assert!(r.history[0].child.is_none());
-    assert!(r.history[0].manager.value.is_some());
+    let report_item = monitor.report();
+    assert_eq!(report_item.read_errors, 2);
+    assert!(!report_item.stopped);
+    assert!(report_item.environment.as_ref().unwrap().mount.value.is_none());
+    assert!(report_item.environment.as_ref().unwrap().writeback["dirty_bytes"].value.is_none());
+    assert_eq!(report_item.history[0].memory.value.as_ref().unwrap().dirty_bytes, None);
+    assert!(report_item.history[0].child.is_none());
+    assert!(report_item.history[0].manager.value.is_some());
 }
 
 #[test]
@@ -133,11 +133,11 @@ fn invalid_targets_phase_or_clock_stop_only_the_context_collector() {
     for (ms, phase, pid, child) in [(9, "gui", 41, None), (11, "bad\nphase", 41, None),
         (11, "gui", 0, None), (11, "gui", 41, Some(41))] {
         let (_dir, source) = fixture();
-        let mut m = Monitor::new(source);
-        m.poll(10, "gui", 41, None);
-        m.poll(ms, phase, pid, child);
-        assert!(m.report().stopped);
-        assert!(m.report().error.is_some());
-        assert_eq!(m.report().samples, 1);
+        let mut monitor = Monitor::new(source);
+        monitor.poll(10, "gui", 41, None);
+        monitor.poll(ms, phase, pid, child);
+        assert!(monitor.report().stopped);
+        assert!(monitor.report().error.is_some());
+        assert_eq!(monitor.report().samples, 1);
     }
 }

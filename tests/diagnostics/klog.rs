@@ -12,7 +12,7 @@ fn snapshots_are_bounded_unfiltered_escaped_and_keep_the_latest_records() {
         let text = format!(
             "unrelated line\n{}",
             (0..20)
-                .map(|n| format!("[{}] VOP \x1bWIN0_EMPTY {}\n", n, "x".repeat(1000)))
+                .map(|count| format!("[{}] VOP \x1bWIN0_EMPTY {}\n", count, "x".repeat(1000)))
                 .collect::<String>()
         );
         let size = text.len().min(buffer.len());
@@ -70,11 +70,11 @@ fn monitor_throttles_recovers_and_does_not_relabel_old_data_as_a_fresh_success()
 #[test]
 fn report_is_bounded_with_escaped_records_and_preserves_truncation_and_error_counts() {
     let mut monitor = Monitor::default();
-    for n in 0..20 {
-        monitor.poll(n * INTERVAL_MS, "gui", || {
+    for count in 0..20 {
+        monitor.poll(count * INTERVAL_MS, "gui", || {
             capture_with(|buffer| {
                 let text = (0..8)
-                    .map(|i| format!("drm {i} {}\n", "\"\\".repeat(130)))
+                    .map(|index| format!("drm {index} {}\n", "\"\\".repeat(130)))
                     .collect::<String>();
                 buffer[..text.len()].copy_from_slice(text.as_bytes());
                 Ok(text.len())
@@ -94,18 +94,18 @@ fn report_is_bounded_with_escaped_records_and_preserves_truncation_and_error_cou
 
 #[test]
 fn invalid_clock_phase_and_reader_bounds_are_explicit_not_empty_successes() {
-    let mut m = Monitor::default();
-    m.poll(10, "gui", || {
-        let mut s = capture_with(|_| Ok(0)).unwrap();
-        s.records = vec!["x".repeat(241)];
-        Ok(s)
+    let mut monitor_item = Monitor::default();
+    monitor_item.poll(10, "gui", || {
+        let mut sample_item = capture_with(|_| Ok(0)).unwrap();
+        sample_item.records = vec!["x".repeat(241)];
+        Ok(sample_item)
     });
-    assert_eq!(m.report().read_errors, 1);
-    m.poll(9, "gui", || panic!("regressing clock read"));
-    assert!(m.report().stopped && m.report().error.is_some());
-    let mut m = Monitor::default();
-    m.poll(0, "x\ny", || panic!("invalid phase read"));
-    assert!(m.report().stopped && m.report().error.is_some());
+    assert_eq!(monitor_item.report().read_errors, 1);
+    monitor_item.poll(9, "gui", || panic!("regressing clock read"));
+    assert!(monitor_item.report().stopped && monitor_item.report().error.is_some());
+    let mut monitor_item = Monitor::default();
+    monitor_item.poll(0, "x\ny", || panic!("invalid phase read"));
+    assert!(monitor_item.report().stopped && monitor_item.report().error.is_some());
 }
 
 fn snapshot(text: &str) -> iman::diagnostics::klog::Snapshot {
@@ -114,45 +114,45 @@ fn snapshot(text: &str) -> iman::diagnostics::klog::Snapshot {
 
 #[test]
 fn all_subsystems_and_unlabelled_lines_are_preserved_with_optional_kernel_metadata() {
-    let s = snapshot("<3>[    1.000042] filesystem error\n<6>[2.3] usb attached\nordinary information\n<4>[not-a-time] memory warning\n");
+    let sample_item = snapshot("<3>[    1.000042] filesystem error\n<6>[2.3] usb attached\nordinary information\n<4>[not-a-time] memory warning\n");
 
-    assert_eq!(s.matching_lines, 4);
-    assert_eq!(s.records_dropped, 0);
-    assert_eq!(s.record_info[0].priority, Some(3));
-    assert_eq!(s.record_info[0].kernel_us, Some(1_000_042));
-    assert_eq!(s.record_info[1].kernel_us, Some(2_300_000));
-    assert_eq!(s.record_info[2].priority, None);
-    assert_eq!(s.record_info[2].kernel_us, None);
-    assert_eq!(s.record_info[3].kernel_us, None);
-    assert_eq!(s.records[2], "ordinary information");
+    assert_eq!(sample_item.matching_lines, 4);
+    assert_eq!(sample_item.records_dropped, 0);
+    assert_eq!(sample_item.record_info[0].priority, Some(3));
+    assert_eq!(sample_item.record_info[0].kernel_us, Some(1_000_042));
+    assert_eq!(sample_item.record_info[1].kernel_us, Some(2_300_000));
+    assert_eq!(sample_item.record_info[2].priority, None);
+    assert_eq!(sample_item.record_info[2].kernel_us, None);
+    assert_eq!(sample_item.record_info[3].kernel_us, None);
+    assert_eq!(sample_item.records[2], "ordinary information");
 }
 
 #[test]
 fn overlapping_snapshots_are_marked_without_claiming_new_error_counts_or_continuity() {
-    let mut m = Monitor::default();
-    m.poll(0, "gui", || Ok(snapshot("<6>[1.0] a\n<3>[2.0] b\n")));
-    m.poll(5000, "gui", || Ok(snapshot("<3>[2.0] b\n<5>[3.0] c\n")));
-    assert_eq!(m.report().history[0].comparison, "initial_inventory");
-    assert_eq!(m.report().history[0].matching_suffix_prefix_records, None);
-    assert_eq!(m.report().history[1].matching_suffix_prefix_records, Some(1));
-    assert_eq!(m.report().history[1].comparison, "content_overlap_only");
-    m.poll(10000, "game", || Err(io::Error::other("synthetic read failure")));
-    m.poll(15000, "game", || Ok(snapshot("<5>[3.0] c\n")));
-    assert_eq!(m.report().history.back().unwrap().comparison, "after_read_error");
-    assert_eq!(m.report().history.back().unwrap().matching_suffix_prefix_records, None);
-    assert_eq!(m.report().unseen_records, "unknown");
+    let mut monitor_item = Monitor::default();
+    monitor_item.poll(0, "gui", || Ok(snapshot("<6>[1.0] a\n<3>[2.0] b\n")));
+    monitor_item.poll(5000, "gui", || Ok(snapshot("<3>[2.0] b\n<5>[3.0] c\n")));
+    assert_eq!(monitor_item.report().history[0].comparison, "initial_inventory");
+    assert_eq!(monitor_item.report().history[0].matching_suffix_prefix_records, None);
+    assert_eq!(monitor_item.report().history[1].matching_suffix_prefix_records, Some(1));
+    assert_eq!(monitor_item.report().history[1].comparison, "content_overlap_only");
+    monitor_item.poll(10000, "game", || Err(io::Error::other("synthetic read failure")));
+    monitor_item.poll(15000, "game", || Ok(snapshot("<5>[3.0] c\n")));
+    assert_eq!(monitor_item.report().history.back().unwrap().comparison, "after_read_error");
+    assert_eq!(monitor_item.report().history.back().unwrap().matching_suffix_prefix_records, None);
+    assert_eq!(monitor_item.report().unseen_records, "unknown");
 }
 
 #[test]
 fn overlapping_truncated_text_is_not_mistaken_for_identical_raw_records() {
-    let mut m = Monitor::default();
-    m.poll(0, "gui", || Ok(snapshot(&("x".repeat(500) + "first\n"))));
-    m.poll(5000, "gui", || Ok(snapshot(&("x".repeat(500) + "second\n"))));
+    let mut monitor_item = Monitor::default();
+    monitor_item.poll(0, "gui", || Ok(snapshot(&("x".repeat(500) + "first\n"))));
+    monitor_item.poll(5000, "gui", || Ok(snapshot(&("x".repeat(500) + "second\n"))));
 
-    let last = m.report().history.back().unwrap();
+    let last = monitor_item.report().history.back().unwrap();
     assert_eq!(last.matching_suffix_prefix_records, Some(0));
     assert!(last.snapshot.as_ref().unwrap().record_info[0].text_truncated);
-    let value: serde_json::Value = serde_json::from_str(&m.report_json().unwrap()).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&monitor_item.report_json().unwrap()).unwrap();
     for sample in value["history"].as_array().unwrap() {
         assert_eq!(sample["snapshot"]["records"].as_array().unwrap().len(), sample["snapshot"]["record_info"].as_array().unwrap().len());
     }
@@ -176,11 +176,11 @@ fn invalid_utf8_records_remain_distinguishable_and_are_marked() {
 #[test]
 fn early_usb_messages_survive_tail_eviction_empty_reads_and_later_read_errors() {
     let boot = "<6>[0.123456] usb 1-1: new high-speed USB device\n<3>[0.5] hub 1-1:1.0: unable to enumerate\n";
-    let unrelated = (0..20).map(|n| format!("[2.0] filesystem message {n}\n")).collect::<String>();
+    let unrelated = (0..20).map(|count| format!("[2.0] filesystem message {count}\n")).collect::<String>();
     let mut monitor = Monitor::default();
     monitor.poll(7, "gui", || Ok(snapshot(&(boot.to_owned() + &unrelated))));
-    for n in 1..=6 {
-        monitor.poll(7 + n * INTERVAL_MS, "input_test", || Ok(snapshot(&unrelated)));
+    for count in 1..=6 {
+        monitor.poll(7 + count * INTERVAL_MS, "input_test", || Ok(snapshot(&unrelated)));
     }
     monitor.poll(7 + 7 * INTERVAL_MS, "gui", || Ok(snapshot("")));
     monitor.poll(7 + 8 * INTERVAL_MS, "gui", || Err(io::Error::other("synthetic read failure")));
@@ -193,8 +193,8 @@ fn early_usb_messages_survive_tail_eviction_empty_reads_and_later_read_errors() 
     assert_eq!(report.usb.last_matching_sample_ms, Some(7));
     assert_eq!(report.usb.last_successful_sample_ms, Some(7 + 7 * INTERVAL_MS));
     assert_eq!(report.usb.matching_line_observations, 2);
-    assert!(report.history.iter().filter_map(|s| s.snapshot.as_ref())
-        .flat_map(|s| &s.records).all(|s| !s.contains("usb") && !s.contains("hub")));
+    assert!(report.history.iter().filter_map(|sample_item| sample_item.snapshot.as_ref())
+        .flat_map(|sample_item| &sample_item.records).all(|sample_item| !sample_item.contains("usb") && !sample_item.contains("hub")));
     let value: serde_json::Value = serde_json::from_str(&monitor.report_json().unwrap()).unwrap();
     assert_eq!(value["version"], 3);
     assert_eq!(value["selection"], "all");
@@ -221,27 +221,27 @@ fn usb_archive_selects_host_and_hid_tokens_without_filtering_the_generic_tail() 
 
 #[test]
 fn usb_capture_keeps_first_and_latest_records_and_reports_omissions_on_every_read() {
-    let text = (0..80).map(|n| format!("usb message {n}\n")).collect::<String>();
+    let text = (0..80).map(|count| format!("usb message {count}\n")).collect::<String>();
     let mut monitor = Monitor::default();
-    for n in 0..3 {
-        monitor.poll(n * INTERVAL_MS, "gui", || Ok(snapshot(&text)));
+    for count in 0..3 {
+        monitor.poll(count * INTERVAL_MS, "gui", || Ok(snapshot(&text)));
     }
 
     let usb = &monitor.report().usb;
     assert_eq!(usb.records.len(), USB_RECORDS);
-    let expected = (0..USB_EARLY_RECORDS).chain(64..80).map(|n| format!("usb message {n}")).collect::<Vec<_>>();
-    assert_eq!(usb.records.iter().map(|r| r.text.clone()).collect::<Vec<_>>(), expected);
+    let expected = (0..USB_EARLY_RECORDS).chain(64..80).map(|count| format!("usb message {count}")).collect::<Vec<_>>();
+    assert_eq!(usb.records.iter().map(|record_item| record_item.text.clone()).collect::<Vec<_>>(), expected);
     assert_eq!(usb.matching_line_observations, 240);
     assert_eq!(usb.capture_dropped_observations, 3 * (80 - USB_RECORDS) as u64);
     assert_eq!(usb.retention_evictions, 0);
-    assert!(usb.records.iter().all(|r| r.observed_ms == 0));
+    assert!(usb.records.iter().all(|record_item| record_item.observed_ms == 0));
     assert_eq!(usb.last_matching_sample_ms, Some(2 * INTERVAL_MS));
 }
 
 #[test]
 fn usb_archive_retains_early_records_and_deduplicates_the_previous_successful_capture() {
-    let first = (0..32).map(|n| format!("usb message {n}\n")).collect::<String>();
-    let second = (32..64).map(|n| format!("usb message {n}\n")).collect::<String>();
+    let first = (0..32).map(|count| format!("usb message {count}\n")).collect::<String>();
+    let second = (32..64).map(|count| format!("usb message {count}\n")).collect::<String>();
     let mut monitor = Monitor::default();
     monitor.poll(0, "gui", || Ok(snapshot(&first)));
     monitor.poll(INTERVAL_MS, "game", || Ok(snapshot(&second)));
@@ -249,20 +249,20 @@ fn usb_archive_retains_early_records_and_deduplicates_the_previous_successful_ca
     monitor.poll(3 * INTERVAL_MS, "game", || Ok(snapshot(&second)));
 
     let usb = &monitor.report().usb;
-    let expected = (0..USB_EARLY_RECORDS).chain(48..64).map(|n| format!("usb message {n}")).collect::<Vec<_>>();
-    assert_eq!(usb.records.iter().map(|r| r.text.clone()).collect::<Vec<_>>(), expected);
+    let expected = (0..USB_EARLY_RECORDS).chain(48..64).map(|count| format!("usb message {count}")).collect::<Vec<_>>();
+    assert_eq!(usb.records.iter().map(|record_item| record_item.text.clone()).collect::<Vec<_>>(), expected);
     assert_eq!(usb.retention_evictions, 32);
     assert_eq!(usb.capture_dropped_observations, 0);
-    assert!(usb.records.iter().take(USB_EARLY_RECORDS).all(|r| r.observed_ms == 0));
-    assert!(usb.records.iter().skip(USB_EARLY_RECORDS).all(|r| r.observed_ms == INTERVAL_MS));
+    assert!(usb.records.iter().take(USB_EARLY_RECORDS).all(|record_item| record_item.observed_ms == 0));
+    assert!(usb.records.iter().skip(USB_EARLY_RECORDS).all(|record_item| record_item.observed_ms == INTERVAL_MS));
     assert_eq!(usb.deduplication, "raw_content_not_event_identity");
 }
 
 #[test]
 fn usb_deduplication_uses_full_raw_bytes_not_truncated_or_lossy_text() {
     let mut monitor = Monitor::default();
-    for (n, byte) in [0xff, 0xfe].into_iter().enumerate() {
-        monitor.poll(n as u64 * INTERVAL_MS, "gui", || capture_with(|buffer| {
+    for (count, byte) in [0xff, 0xfe].into_iter().enumerate() {
+        monitor.poll(count as u64 * INTERVAL_MS, "gui", || capture_with(|buffer| {
             let mut bytes = b"usb ".to_vec();
             bytes.extend_from_slice("x".repeat(500).as_bytes());
             bytes.push(byte);
@@ -274,7 +274,7 @@ fn usb_deduplication_uses_full_raw_bytes_not_truncated_or_lossy_text() {
     let records = &monitor.report().usb.records;
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].text, records[1].text);
-    assert!(records.iter().all(|r| r.info.text_truncated && r.info.invalid_utf8));
+    assert!(records.iter().all(|record_item| record_item.info.text_truncated && record_item.info.invalid_utf8));
     assert_eq!(records[1].observed_ms, INTERVAL_MS);
 }
 
@@ -297,12 +297,12 @@ fn usb_archive_marks_partial_first_line_without_labeling_every_message_partial()
 #[test]
 fn worst_case_usb_text_fits_report_export_and_ipc_without_losing_early_evidence() {
     let mut monitor = Monitor::default();
-    for n in 0..8 {
-        let text = (0..USB_RECORDS).map(|i| {
-            format!("<191>[18446744073709.000000] usb {} {}\n", n * USB_RECORDS + i, "\"\\".repeat(130))
+    for count in 0..8 {
+        let text = (0..USB_RECORDS).map(|index| {
+            format!("<191>[18446744073709.000000] usb {} {}\n", count * USB_RECORDS + index, "\"\\".repeat(130))
         }).collect::<String>();
         assert!(text.len() < LIMIT);
-        monitor.poll(n as u64 * INTERVAL_MS, "input_test", || Ok(snapshot(&text)));
+        monitor.poll(count as u64 * INTERVAL_MS, "input_test", || Ok(snapshot(&text)));
     }
     let before = serde_json::to_value(monitor.report()).unwrap();
     let text = monitor.report_json().unwrap();
